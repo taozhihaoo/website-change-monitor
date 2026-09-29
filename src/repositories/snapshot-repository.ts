@@ -87,4 +87,30 @@ export class SnapshotRepository {
       return row.count;
     });
   }
+
+  /**
+   * Deletes the oldest snapshots beyond `keep` (newest-first ordering as used
+   * by latestByMonitor). The latest snapshot is always retained. Change
+   * events are untouched — they carry their own content copies.
+   */
+  pruneToLimit(monitorId: string, keep: number): number {
+    return withDb('snapshot.pruneToLimit', () => {
+      if (keep <= 0) {
+        return 0;
+      }
+      const result = this.db
+        .prepare(
+          `
+          DELETE FROM snapshots
+          WHERE monitor_id = ?
+            AND id NOT IN (
+              SELECT id FROM snapshots WHERE monitor_id = ?
+              ORDER BY checked_at DESC, rowid DESC LIMIT ?
+            )
+        `,
+        )
+        .run(monitorId, monitorId, keep);
+      return result.changes;
+    });
+  }
 }

@@ -16,6 +16,7 @@ export const envSchema = z.object({
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(100).default(8_000),
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   DNS_TIMEOUT_MS: z.coerce.number().int().min(100).default(5_000),
+  MAX_SNAPSHOTS_PER_MONITOR: z.coerce.number().int().min(0).default(100),
   ALLOW_PRIVATE_TARGETS: z
     .enum(['true', 'false'])
     .default('false')
@@ -35,6 +36,8 @@ export interface AppConfig {
   webhookTimeoutMs: number;
   webhookMaxAttempts: number;
   dnsTimeoutMs: number;
+  /** Per-monitor snapshot cap; 0 disables pruning (unlimited). */
+  maxSnapshotsPerMonitor: number;
   allowPrivateTargets: boolean;
   defaultNotificationProvider: 'none' | 'mock';
 }
@@ -53,6 +56,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     webhookTimeoutMs: parsed.WEBHOOK_TIMEOUT_MS,
     webhookMaxAttempts: parsed.WEBHOOK_MAX_ATTEMPTS,
     dnsTimeoutMs: parsed.DNS_TIMEOUT_MS,
+    maxSnapshotsPerMonitor: parsed.MAX_SNAPSHOTS_PER_MONITOR,
     allowPrivateTargets: parsed.ALLOW_PRIVATE_TARGETS,
     defaultNotificationProvider: parsed.DEFAULT_NOTIFICATION_PROVIDER,
   };

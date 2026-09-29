@@ -86,6 +86,7 @@ async function main(): Promise<void> {
     logger,
     defaultTimeoutMs: config.defaultTimeoutMs,
     defaultSettleMs: config.extractionSettleMs,
+    maxSnapshotsPerMonitor: config.maxSnapshotsPerMonitor,
   });
 
   const queue = new BoundedQueue(config.maxConcurrentChecks, (err) =>

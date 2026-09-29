@@ -75,6 +75,8 @@ export interface StackOptions {
   clock?: MutableClock;
   /** Resolver handed to MonitorService/ExtractionService for DNS guarding. */
   dnsResolver?: HostResolver | null;
+  /** 0 (default in tests) keeps full snapshot history. */
+  maxSnapshotsPerMonitor?: number;
 }
 
 /** Offline default: every hostname resolves to a public IP. */
@@ -133,6 +135,7 @@ export function buildStack(options: StackOptions = {}): ServiceStack {
     logger,
     defaultTimeoutMs: 5_000,
     defaultSettleMs: 0,
+    maxSnapshotsPerMonitor: options.maxSnapshotsPerMonitor ?? 0,
   });
 
   const monitorService = new MonitorService({

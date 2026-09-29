@@ -39,6 +39,8 @@ export interface CheckServiceDeps {
   logger: Logger;
   defaultTimeoutMs: number;
   defaultSettleMs: number;
+  /** 0 disables pruning (unlimited history). */
+  maxSnapshotsPerMonitor: number;
 }
 
 /**
@@ -104,6 +106,9 @@ export class CheckService {
         content,
         checkedAt,
       });
+      if (this.deps.maxSnapshotsPerMonitor > 0) {
+        this.deps.snapshotRepo.pruneToLimit(monitor.id, this.deps.maxSnapshotsPerMonitor);
+      }
 
       let status: CheckStatus;
       let changeEvent: ChangeEvent | null = null;

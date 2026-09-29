@@ -108,6 +108,7 @@ export async function buildRealStack(options: StackOptions = {}): Promise<RealSt
     logger,
     defaultTimeoutMs: 10_000,
     defaultSettleMs: 50,
+    maxSnapshotsPerMonitor: 0,
   });
 
   const queue = new BoundedQueue(3, (err) => logger.error({ err }, 'queue task crashed'));
