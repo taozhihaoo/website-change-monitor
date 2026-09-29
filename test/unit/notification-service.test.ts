@@ -101,9 +101,12 @@ describe('NotificationService', () => {
       const deliveries = stack.repos.deliveries.listByMonitor(monitor.id, 10);
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0]).toMatchObject({ provider: 'webhook', status: 'sent', attempts: 1 });
-      // target stored sanitized: origin only, secret query stripped
-      expect(deliveries[0]?.target).toBe(new URL(hook.url).origin);
-      expect(deliveries[0]?.target).not.toContain('token123');
+      // the database keeps the COMPLETE endpoint (path + query preserved) —
+      // an origin-only record could not be audited or debugged
+      expect(deliveries[0]?.target).toBe(hook.url);
+      expect(deliveries[0]?.target).toContain('/hook?secret=token123');
+      // no error detail on success, and nothing URL-related leaked
+      expect(deliveries[0]?.lastError).toBeNull();
       void baseline;
     } finally {
       cleanupStack(stack);

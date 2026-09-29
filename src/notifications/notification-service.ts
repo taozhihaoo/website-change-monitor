@@ -7,7 +7,6 @@ import type { Clock } from '../utils/clock.js';
 import { newId } from '../utils/id.js';
 import { sleep } from '../utils/clock.js';
 import type { UrlGuardOptions } from '../utils/url-guard.js';
-import { isSafePublicUrl } from '../utils/url-guard.js';
 import type { NotificationPayload, NotificationProvider } from './provider.js';
 
 export interface TestNotificationResult {
@@ -28,13 +27,19 @@ export interface NotificationServiceDeps {
   defaultProvider: 'none' | 'mock';
 }
 
-function sanitizeTarget(target: string): string {
-  if (!isSafePublicUrl(target, { allowPrivateTargets: true })) {
-    return 'unparsed';
+/**
+ * Delivery records store the complete webhook endpoint (path + query) so the
+ * history reflects what was actually called — webhooks routinely live at
+ * secret paths, and an origin-only record cannot be debugged or audited.
+ * Masking happens at the API layer (see serializers), never in storage.
+ */
+function storableTarget(providerName: string, target: string): string {
+  if (providerName !== 'webhook') {
+    return target; // e.g. 'mock'
   }
   try {
-    // Store only the origin — webhook URLs frequently contain secret tokens.
-    return new URL(target).origin;
+    new URL(target);
+    return target;
   } catch {
     return 'unparsed';
   }
@@ -82,7 +87,7 @@ export class NotificationService {
       changeEventId: event.id,
       monitorId: monitor.id,
       provider: providerName,
-      target: providerName === 'webhook' ? sanitizeTarget(target) : target,
+      target: storableTarget(providerName, target),
       createdAt: now,
     });
 

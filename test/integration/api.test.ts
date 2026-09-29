@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startFixtureSite, type FixtureSite } from './helpers/fixture-site.js';
+import { startFixtureSite, readFixture, type FixtureSite } from './helpers/fixture-site.js';
 import { buildRealStack, type RealStack } from './helpers/real-stack.js';
 
 /**
@@ -197,6 +197,43 @@ describe('HTTP API', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ provider: 'mock', delivered: true });
+  });
+
+  it('webhook deliveries keep the full endpoint internally, masked over the API', async () => {
+    // point the monitor at an unreachable (offline) webhook with a secret path
+    const created = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: {
+        name: 'Hook mask',
+        url: site.url,
+        selector: '.product-price',
+        webhook_url: 'https://hooks.example.com/webhooks/abc123?token=secret',
+      },
+    });
+    const id = (created.json() as { monitor: { id: string } }).monitor.id;
+
+    // force a change so a notification fires: baseline on v2, then flip to v1
+    await site.setPage(await readFixture('site-v2.html'));
+    await stack.app.inject({ method: 'POST', url: `/monitors/${id}/run?wait=1` });
+    await site.setPage(await readFixture('site-v1.html'));
+    const run = await stack.app.inject({ method: 'POST', url: `/monitors/${id}/run?wait=1` });
+    expect((run.json() as { run: { status: string } }).run.status).toBe('changed');
+
+    const changes = await stack.app.inject({ method: 'GET', url: `/monitors/${id}/changes` });
+    const body = changes.body;
+    const deliveries = (
+      changes.json() as {
+        changes: Array<{ deliveries: Array<{ target: string; last_error: string | null }> }>;
+      }
+    ).changes[0]?.deliveries;
+    expect(deliveries).toHaveLength(1);
+    // API shows origin only — path and secret query are masked
+    expect(deliveries?.[0]?.target).toBe('https://hooks.example.com/…');
+    expect(body).not.toContain('abc123');
+    expect(body).not.toContain('token=secret');
+    // failure details must not leak the configured URL either
+    expect(deliveries?.[0]?.last_error ?? '').not.toContain('http');
   });
 
   it('GET /stats aggregates dashboard numbers', async () => {

@@ -74,13 +74,31 @@ export function serializeCheckRun(run: CheckRun): Record<string, unknown> {
   };
 }
 
+/**
+ * Webhook delivery targets are stored in full in the database (they are
+ * needed to audit what was actually called) but masked in API responses:
+ * webhook paths and queries routinely carry secret tokens.
+ */
+function maskDeliveryTarget(target: string): string {
+  if (target === 'mock') {
+    return target;
+  }
+  try {
+    const parsed = new URL(target);
+    const hasSuffix = (parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search !== '';
+    return `${parsed.origin}${hasSuffix ? '/…' : ''}`;
+  } catch {
+    return 'unparsed';
+  }
+}
+
 export function serializeDelivery(delivery: NotificationDelivery): Record<string, unknown> {
   return {
     id: delivery.id,
     change_event_id: delivery.changeEventId,
     monitor_id: delivery.monitorId,
     provider: delivery.provider,
-    target: delivery.target,
+    target: maskDeliveryTarget(delivery.target),
     status: delivery.status,
     attempts: delivery.attempts,
     last_error: delivery.lastError,
