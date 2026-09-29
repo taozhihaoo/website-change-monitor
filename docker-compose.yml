@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    image: website-change-monitor:latest
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      APP_PORT: 3000
+      DB_PATH: /app/data/wcm.db
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-true}
+      MAX_CONCURRENT_CHECKS: ${MAX_CONCURRENT_CHECKS:-5}
+      DEFAULT_TIMEOUT: ${DEFAULT_TIMEOUT:-30000}
+      DEFAULT_NOTIFICATION_PROVIDER: ${DEFAULT_NOTIFICATION_PROVIDER:-none}
+      # SECURITY: keep this false unless you know you need local targets.
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - wcm-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  wcm-data:
