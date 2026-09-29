@@ -40,6 +40,7 @@ export default tseslint.config(
         URL: 'readonly',
         Buffer: 'readonly',
         setTimeout: 'readonly',
+        fetch: 'readonly',
       },
     },
     rules: { 'no-console': 'off' },
