@@ -97,29 +97,90 @@ describe('CheckService (core pipeline)', () => {
     }
   });
 
-  it('A→B→A→B produces only one event per content state (idempotency)', async () => {
+  it('every hash transition produces exactly one event and one notification (regression)', async () => {
     const stack = makeStack();
     try {
       const monitor = stack.createMonitor();
       const runWith = async (content: string) => {
         stack.setExtraction(constantExtraction(content));
-        return stack.checkService.runCheck(monitor, 'schedule');
+        const outcome = await stack.checkService.runCheck(monitor, 'schedule');
+        if (outcome.notification !== null) {
+          await outcome.notification;
+        }
+        return outcome;
       };
 
-      await runWith('A'); // baseline
-      const toB = await runWith('B'); // changed, event for B
-      const backToA = await runWith('A'); // changed vs B; event for A created
-      const toBAgain = await runWith('B'); // changed vs A, but B already has an event
+      // A → baseline
+      const a1 = await runWith('A');
+      expect(a1.run.status).toBe('baseline');
+      expect(a1.changeEvent).toBeNull();
 
-      expect(toB.changeEvent).not.toBeNull();
-      expect(backToA.run.status).toBe('changed');
-      expect(toBAgain.run.status).toBe('changed');
-      expect(toBAgain.changeEvent).toBeNull(); // duplicate content state suppressed
-      expect(toBAgain.notification).toBeNull(); // and no duplicate notification
-      expect(stack.repos.changeEvents.countByMonitor(monitor.id)).toBe(2); // A and B once each
-      await toB.notification;
-      await backToA.notification;
-      expect(stack.mockPayloads).toHaveLength(2);
+      // A → B: one event, one notification
+      const b1 = await runWith('B');
+      expect(b1.run.status).toBe('changed');
+      expect(b1.changeEvent).not.toBeNull();
+
+      // B → B (repeated unchanged polling): no new event, no notification
+      const b2 = await runWith('B');
+      expect(b2.run.status).toBe('unchanged');
+      expect(b2.changeEvent).toBeNull();
+
+      // B → A: a real change even though A existed before
+      const a2 = await runWith('A');
+      expect(a2.run.status).toBe('changed');
+      expect(a2.changeEvent).not.toBeNull();
+      expect(a2.changeEvent?.previousContent).toBe('B');
+      expect(a2.changeEvent?.currentContent).toBe('A');
+
+      // A → B again: yet another real change, with its own event
+      const b3 = await runWith('B');
+      expect(b3.run.status).toBe('changed');
+      expect(b3.changeEvent).not.toBeNull();
+      expect(b3.changeEvent?.previousContent).toBe('A');
+      expect(b3.changeEvent?.currentContent).toBe('B');
+
+      // long stretches of unchanged polling never accumulate events
+      await runWith('B');
+      await runWith('B');
+      const b5 = await runWith('B');
+      expect(b5.run.status).toBe('unchanged');
+
+      // 3 events (A→B, B→A, A→B), 3 notifications — one per event, no duplicates
+      expect(stack.repos.changeEvents.countByMonitor(monitor.id)).toBe(3);
+      expect(stack.mockPayloads).toHaveLength(3);
+      // event history records the full transition chain B → A → B
+      const events = stack.repos.changeEvents.listByMonitor(monitor.id, 10);
+      expect(events.map((event) => `${event.previousContent}→${event.currentContent}`)).toEqual([
+        'A→B',
+        'B→A',
+        'A→B',
+      ]);
+      // and each event's payload carries its own previous/current hashes
+      expect(stack.mockPayloads.map((payload) => payload.previous_hash)).toEqual(
+        events.map((event) => event.previousHash).reverse(),
+      );
+    } finally {
+      cleanupStack(stack);
+    }
+  });
+
+  it('one logical check cannot produce a duplicate event or notification', async () => {
+    const stack = makeStack();
+    try {
+      const monitor = stack.createMonitor();
+      stack.setExtraction(constantExtraction('v1'));
+      await stack.checkService.runCheck(monitor, 'schedule');
+      stack.setExtraction(constantExtraction('v2'));
+
+      // a single runCheck returns exactly one event and triggers exactly one
+      // notification; concurrent triggers of the same transition are already
+      // prevented by the MONITOR_BUSY guard (covered in its own test)
+      const outcome = await stack.checkService.runCheck(monitor, 'schedule');
+      await outcome.notification;
+      expect(outcome.changeEvent).not.toBeNull();
+      expect(stack.mockPayloads).toHaveLength(1);
+      expect(stack.repos.changeEvents.countByMonitor(monitor.id)).toBe(1);
+      expect(outcome.notification).toBeTypeOf('object');
     } finally {
       cleanupStack(stack);
     }

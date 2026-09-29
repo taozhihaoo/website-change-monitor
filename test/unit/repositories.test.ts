@@ -141,7 +141,7 @@ describe('repositories (SQLite CRUD)', () => {
   });
 
   describe('changeEventRepository', () => {
-    it('rejects duplicate (monitor_id, current_hash) with null — the idempotency guarantee', () => {
+    it('records every transition, including returns to previously seen content', () => {
       const monitor = repos.monitors.create(makeMonitor());
       const event = (id: string, currentHash: string): NewChangeEvent => ({
         id,
@@ -155,14 +155,15 @@ describe('repositories (SQLite CRUD)', () => {
       });
 
       expect(repos.changeEvents.insert(event('e1', 'hash-B'))?.id).toBe('e1');
-      // same content state again → null, no second event
-      expect(repos.changeEvents.insert(event('e2', 'hash-B'))).toBeNull();
-      // different state → allowed
+      // same current_hash again must still be recordable: a monitor can
+      // legitimately revisit a content state (A→B→A→B) and each transition
+      // is its own change (no UNIQUE(monitor_id, current_hash) suppression)
+      expect(repos.changeEvents.insert(event('e2', 'hash-B'))?.id).toBe('e2');
       expect(repos.changeEvents.insert(event('e3', 'hash-C'))?.id).toBe('e3');
 
-      expect(repos.changeEvents.countByMonitor(monitor.id)).toBe(2);
-      expect(repos.changeEvents.countAll()).toBe(2);
-      expect(repos.changeEvents.listByMonitor(monitor.id, 10)).toHaveLength(2);
+      expect(repos.changeEvents.countByMonitor(monitor.id)).toBe(3);
+      expect(repos.changeEvents.countAll()).toBe(3);
+      expect(repos.changeEvents.listByMonitor(monitor.id, 10)).toHaveLength(3);
     });
 
     it('round-trips the diff payload', () => {

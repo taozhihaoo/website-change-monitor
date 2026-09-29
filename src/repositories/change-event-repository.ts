@@ -54,51 +54,34 @@ function parseDiff(json: string): DiffResult {
   return { added: 0, removed: 0, changes: [] };
 }
 
-function isUniqueConstraintError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
-  );
-}
-
 export class ChangeEventRepository {
   constructor(private readonly db: Db) {}
 
   /**
-   * Inserts a change event. Returns null when an event for the same
-   * (monitor_id, current_hash) already exists — the UNIQUE constraint is the
-   * idempotency guarantee that prevents duplicate notifications for the same
-   * content state.
+   * Inserts a change event. Called only when the current hash differs from
+   * the previous snapshot's hash, so every call represents a genuinely
+   * changed check and must be recorded.
    */
-  insert(event: NewChangeEvent): ChangeEvent | null {
+  insert(event: NewChangeEvent): ChangeEvent {
     return withDb('changeEvent.insert', () => {
-      try {
-        this.db
-          .prepare(
-            `
-            INSERT INTO change_events
-              (id, monitor_id, previous_hash, current_hash, previous_content, current_content, diff_json, detected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          )
-          .run(
-            event.id,
-            event.monitorId,
-            event.previousHash,
-            event.currentHash,
-            event.previousContent,
-            event.currentContent,
-            JSON.stringify(event.diff),
-            event.detectedAt,
-          );
-      } catch (err) {
-        if (isUniqueConstraintError(err)) {
-          return null;
-        }
-        throw err;
-      }
+      this.db
+        .prepare(
+          `
+          INSERT INTO change_events
+            (id, monitor_id, previous_hash, current_hash, previous_content, current_content, diff_json, detected_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          event.id,
+          event.monitorId,
+          event.previousHash,
+          event.currentHash,
+          event.previousContent,
+          event.currentContent,
+          JSON.stringify(event.diff),
+          event.detectedAt,
+        );
       return {
         id: event.id,
         monitorId: event.monitorId,

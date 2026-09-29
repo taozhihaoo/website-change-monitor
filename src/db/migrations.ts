@@ -13,8 +13,7 @@ export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
     name: 'init',
-    sql: `
-      CREATE TABLE monitors (
+    sql: `      CREATE TABLE monitors (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         url TEXT NOT NULL,
@@ -76,6 +75,36 @@ export const MIGRATIONS: readonly Migration[] = [
       );
       CREATE INDEX idx_deliveries_event ON notification_deliveries(change_event_id);
       CREATE INDEX idx_deliveries_monitor ON notification_deliveries(monitor_id, created_at DESC);
+    `,
+  },
+  {
+    version: 2,
+    name: 'change-events-drop-unique-current-hash',
+    // The v1 UNIQUE(monitor_id, current_hash) suppressed real changes: after
+    // A→B→A, a later A→B was treated as a duplicate and never recorded or
+    // notified. Every genuinely changed check must produce its own event, so
+    // the constraint goes away; idempotency comes from comparing against the
+    // previous snapshot instead (unchanged polls never reach the event path).
+    // SQLite cannot drop a table constraint in place, so rebuild and copy.
+    sql: `
+      CREATE TABLE change_events_new (
+        id TEXT PRIMARY KEY,
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        previous_hash TEXT NOT NULL,
+        current_hash TEXT NOT NULL,
+        previous_content TEXT NOT NULL,
+        current_content TEXT NOT NULL,
+        diff_json TEXT NOT NULL,
+        detected_at TEXT NOT NULL
+      );
+      INSERT INTO change_events_new
+        (id, monitor_id, previous_hash, current_hash, previous_content, current_content, diff_json, detected_at)
+        SELECT id, monitor_id, previous_hash, current_hash, previous_content, current_content, diff_json, detected_at
+        FROM change_events;
+      DROP INDEX idx_change_events_monitor;
+      DROP TABLE change_events;
+      ALTER TABLE change_events_new RENAME TO change_events;
+      CREATE INDEX idx_change_events_monitor ON change_events(monitor_id, detected_at DESC);
     `,
   },
 ];

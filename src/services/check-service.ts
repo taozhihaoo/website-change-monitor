@@ -47,10 +47,11 @@ export interface CheckServiceDeps {
  *
  * Semantics:
  * - first successful check stores the baseline and never notifies;
- * - same hash as previous snapshot → unchanged;
- * - different hash → snapshot + change event. The UNIQUE(monitor_id,
- *   current_hash) constraint guarantees one event per content state (A→B→A→B
- *   does not re-notify for B);
+ * - same hash as previous snapshot → unchanged (no event, no notification —
+ *   this is what makes repeated polling idempotent);
+ * - different hash → snapshot + change event + notification. Every genuinely
+ *   changed check produces its own event, including transitions back to a
+ *   previously seen content (A→B→A is a real change);
  * - notifications are asynchronous: a failed webhook never fails the check;
  * - every attempt (including errors) produces exactly one check_run row.
  */
@@ -114,7 +115,6 @@ export class CheckService {
       } else {
         status = 'changed';
         const diff = computeDiff(previous.content, content);
-        // Returns null when this content state already has an event (idempotency).
         changeEvent = this.deps.changeEventRepo.insert({
           id: newId(),
           monitorId: monitor.id,
