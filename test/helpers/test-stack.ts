@@ -165,6 +165,7 @@ export function buildStack(options: StackOptions = {}): ServiceStack {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,

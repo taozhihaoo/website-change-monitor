@@ -196,7 +196,8 @@ describe('HTTP API', () => {
       url: `/monitors/${id}/test-notification`,
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ provider: 'mock', delivered: true });
+    const notifyBody = response.json() as { results: Array<{ provider: string; delivered: boolean }> };
+    expect(notifyBody.results[0]).toMatchObject({ provider: 'mock', delivered: true });
   });
 
   it('webhook deliveries keep the full endpoint internally, masked over the API', async () => {

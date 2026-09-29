@@ -12,6 +12,17 @@ const webhookUrlSchema = z
   .nullable()
   .default(null);
 
+const notifyEmailSchema = z
+  .string()
+  .trim()
+  .max(320)
+  .refine((value) => value.length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+    message: 'Must be a valid email address.',
+  })
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable()
+  .default(null);
+
 const intervalSchema = z.coerce
   .number()
   .int()
@@ -26,6 +37,7 @@ export const createMonitorSchema = z.object({
   check_interval_seconds: intervalSchema.default(300),
   enabled: z.boolean().default(true),
   webhook_url: webhookUrlSchema,
+  notify_email: notifyEmailSchema,
 });
 
 // For updates there must be no defaults: an absent field means "leave
@@ -34,6 +46,17 @@ const webhookPatchSchema = z
   .string()
   .trim()
   .max(2048)
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable()
+  .optional();
+
+const notifyEmailPatchSchema = z
+  .string()
+  .trim()
+  .max(320)
+  .refine((value) => value.length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+    message: 'Must be a valid email address.',
+  })
   .transform((value) => (value.length === 0 ? null : value))
   .nullable()
   .optional();
@@ -47,6 +70,7 @@ export const updateMonitorSchema = z
     check_interval_seconds: intervalSchema.optional(),
     enabled: z.boolean().optional(),
     webhook_url: webhookPatchSchema,
+    notify_email: notifyEmailPatchSchema,
   })
   .refine(
     (value) =>
@@ -56,7 +80,8 @@ export const updateMonitorSchema = z
       value.selector_type !== undefined ||
       value.check_interval_seconds !== undefined ||
       value.enabled !== undefined ||
-      value.webhook_url !== undefined,
+      value.webhook_url !== undefined ||
+      value.notify_email !== undefined,
     { message: 'Provide at least one field to update.' },
   );
 

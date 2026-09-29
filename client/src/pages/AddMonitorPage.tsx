@@ -14,6 +14,7 @@ export function AddMonitorPage(): ReactElement {
       selector_type: values.selector_type,
       check_interval_seconds: values.check_interval_seconds,
       webhook_url: values.webhook_url === '' ? null : values.webhook_url,
+      notify_email: values.notify_email === '' ? null : values.notify_email,
       enabled: values.enabled,
     });
     navigate(`/monitors/${result.monitor.id}`);

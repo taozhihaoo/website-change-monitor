@@ -1,5 +1,6 @@
 import { loadConfigFromEnvironment } from './config/env.js';
 import { createLogger } from './utils/logger.js';
+import { createTransport } from 'nodemailer';
 import { openDatabase } from './db/database.js';
 import { migrate } from './db/migrate.js';
 import { createRepositories } from './repositories/index.js';
@@ -11,6 +12,7 @@ import {
   MockNotifier,
 } from './notifications/mock-notifier.js';
 import { WebhookNotifier } from './notifications/webhook-notifier.js';
+import { SmtpEmailNotifier } from './notifications/email-notifier.js';
 import { NotificationService } from './notifications/notification-service.js';
 import type { NotificationProvider } from './notifications/provider.js';
 import { BoundedQueue } from './scheduler/queue.js';
@@ -57,14 +59,34 @@ async function main(): Promise<void> {
     defaultSettleMs: config.extractionSettleMs,
   });
 
+  const providers = new Map<string, NotificationProvider>([
+    [
+      'webhook',
+      new WebhookNotifier({ timeoutMs: config.webhookTimeoutMs, urlGuardOptions, dnsResolver }),
+    ],
+    ['mock', new MockNotifier(logger)],
+  ]);
+  if (config.smtpHost !== null) {
+    if (config.smtpFrom === null) {
+      throw new Error('SMTP_FROM is required when SMTP_HOST is configured.');
+    }
+    const transport = createTransport({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      ...(config.smtpUser !== null
+        ? { auth: { user: config.smtpUser, pass: config.smtpPassword ?? '' } }
+        : {}),
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+    });
+    providers.set('email', new SmtpEmailNotifier({ from: config.smtpFrom, transport }));
+    logger.info({ host: config.smtpHost, port: config.smtpPort }, 'email notification provider enabled');
+  }
+
   const notificationService = new NotificationService({
-    providers: new Map<string, NotificationProvider>([
-      [
-        'webhook',
-        new WebhookNotifier({ timeoutMs: config.webhookTimeoutMs, urlGuardOptions, dnsResolver }),
-      ],
-      ['mock', new MockNotifier(logger)],
-    ]),
+    providers,
     deliveryRepo: repos.deliveries,
     clock: systemClock,
     logger,

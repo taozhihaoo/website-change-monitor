@@ -10,6 +10,7 @@ export interface MonitorFormValues {
   selector_type: SelectorType;
   check_interval_seconds: number;
   webhook_url: string;
+  notify_email: string;
   enabled: boolean;
 }
 
@@ -29,6 +30,7 @@ const EMPTY_FORM: MonitorFormValues = {
   selector_type: 'css',
   check_interval_seconds: 300,
   webhook_url: '',
+  notify_email: '',
   enabled: true,
 };
 
@@ -40,6 +42,7 @@ function toFormValues(monitor: Monitor): MonitorFormValues {
     selector_type: monitor.selector_type,
     check_interval_seconds: monitor.check_interval_seconds,
     webhook_url: monitor.webhook_url ?? '',
+    notify_email: monitor.notify_email ?? '',
     enabled: monitor.enabled,
   };
 }
@@ -171,6 +174,17 @@ export function MonitorForm({
           type="url"
         />
         <small>Receives a JSON POST whenever a change is detected.</small>
+      </label>
+
+      <label>
+        Notification email (optional, requires SMTP on the server)
+        <input
+          value={values.notify_email}
+          onChange={(event) => set('notify_email', event.target.value)}
+          placeholder="owner@example.com"
+          type="email"
+        />
+        <small>Sends a compact change email when the SMTP provider is configured.</small>
       </label>
 
       <label className="checkbox-label">

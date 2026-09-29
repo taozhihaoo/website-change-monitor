@@ -32,6 +32,7 @@ describe('website change monitoring (full pipeline)', () => {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
     });
 
     // 1. first check → baseline
@@ -91,6 +92,7 @@ describe('website change monitoring (full pipeline)', () => {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
     });
     const outcome = await stack.checkService.runCheck(monitor, 'manual');
     expect(outcome.run.status).toBe('baseline');
@@ -106,6 +108,7 @@ describe('website change monitoring (full pipeline)', () => {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
     });
     const outcome = await stack.checkService.runCheck(monitor, 'manual');
     expect(outcome.run.status).toBe('baseline');
@@ -122,6 +125,7 @@ describe('website change monitoring (full pipeline)', () => {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
     });
     const outcome = await stack.checkService.runCheck(monitor, 'manual');
     expect(outcome.run.status).toBe('error');
@@ -136,6 +140,7 @@ describe('website change monitoring (full pipeline)', () => {
       checkIntervalSeconds: 300,
       enabled: true,
       webhookUrl: null,
+      notifyEmail: null,
     });
     const recovered = await stack.checkService.runCheck(working, 'manual');
     expect(recovered.run.status).toBe('baseline');

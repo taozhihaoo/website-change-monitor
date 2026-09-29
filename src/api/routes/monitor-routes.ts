@@ -52,6 +52,7 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
       checkIntervalSeconds: body.check_interval_seconds,
       enabled: body.enabled,
       webhookUrl: body.webhook_url,
+      notifyEmail: body.notify_email,
     });
     return reply.status(201).send({ monitor: serializeMonitor(monitor) });
   });
@@ -75,6 +76,7 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
         : {}),
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
       ...(body.webhook_url !== undefined ? { webhookUrl: body.webhook_url } : {}),
+      ...(body.notify_email !== undefined ? { notifyEmail: body.notify_email } : {}),
     };
     const monitor = await deps.monitorService.update(id, patch);
     return { monitor: serializeMonitor(monitor) };
@@ -149,10 +151,15 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
   app.post('/monitors/:id/test-notification', async (request) => {
     const { id } = idParamSchema.parse(request.params);
     const monitor = deps.monitorService.get(id);
-    const result = await deps.notificationService.sendTestNotification(monitor);
-    if (!result.delivered) {
-      throw new AppError('NOTIFICATION_FAILED', result.error ?? 'Test notification failed.');
+    const results = await deps.notificationService.sendTestNotification(monitor);
+    const attempted = results.filter((result) => result.provider !== 'none');
+    const allFailed = attempted.length > 0 && attempted.every((result) => !result.delivered);
+    if (allFailed) {
+      const errors = attempted
+        .map((result) => `${result.provider}: ${result.error ?? 'failed'}`)
+        .join('; ');
+      throw new AppError('NOTIFICATION_FAILED', errors || 'Test notification failed.');
     }
-    return { provider: result.provider, delivered: true };
+    return { results };
   });
 }

@@ -240,6 +240,7 @@ describe('CheckService (core pipeline)', () => {
           checkIntervalSeconds: 300,
           enabled: true,
           webhookUrl: null,
+      notifyEmail: null,
         }),
       ).rejects.toMatchObject({ code: 'URL_NOT_ALLOWED' });
 
@@ -252,6 +253,7 @@ describe('CheckService (core pipeline)', () => {
         checkIntervalSeconds: 300,
         enabled: true,
         webhookUrl: null,
+      notifyEmail: null,
       });
       expect(ok.name).toBe('Public');
     } finally {
@@ -281,6 +283,7 @@ describe('CheckService (core pipeline)', () => {
           checkIntervalSeconds: 300,
           enabled: true,
           webhookUrl: null,
+      notifyEmail: null,
         }),
       ).rejects.toMatchObject({ code: 'DNS_ERROR' });
     } finally {

@@ -28,6 +28,7 @@ export interface CreateMonitorInput {
   checkIntervalSeconds: number;
   enabled: boolean;
   webhookUrl: string | null;
+  notifyEmail: string | null;
 }
 
 export type UpdateMonitorInput = MonitorPatch;
@@ -86,6 +87,7 @@ export class MonitorService {
       checkIntervalSeconds: input.checkIntervalSeconds,
       enabled: input.enabled,
       webhookUrl: input.webhookUrl,
+      notifyEmail: input.notifyEmail,
       createdAt: now,
       updatedAt: now,
     });

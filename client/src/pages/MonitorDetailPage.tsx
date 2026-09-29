@@ -6,7 +6,6 @@ import type {
   CheckRun,
   MonitorWithSummary,
   Snapshot,
-  TestNotificationResult,
 } from '../types.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { MonitorForm, describeError, type MonitorFormValues } from '../components/MonitorForm.js';
@@ -103,10 +102,13 @@ export function MonitorDetailPage(): ReactElement {
     setBusy('notify');
     setMessage(null);
     try {
-      const result = await api.post<TestNotificationResult>(
+      const result = await api.post<{ results: Array<{ provider: string; delivered: boolean }> }>(
         `/monitors/${monitor.id}/test-notification`,
       );
-      setMessage(`Test notification delivered via ${result.provider}.`);
+      const summary = result.results
+        .map((entry) => `${entry.provider}: ${entry.delivered ? 'delivered' : 'failed'}`)
+        .join(', ');
+      setMessage(`Test notification — ${summary}.`);
     } catch (err) {
       setMessage(describeError(err));
     } finally {
@@ -122,6 +124,7 @@ export function MonitorDetailPage(): ReactElement {
       selector_type: values.selector_type,
       check_interval_seconds: values.check_interval_seconds,
       webhook_url: values.webhook_url === '' ? null : values.webhook_url,
+      notify_email: values.notify_email === '' ? null : values.notify_email,
       enabled: values.enabled,
     });
     setEditing(false);
@@ -210,7 +213,11 @@ export function MonitorDetailPage(): ReactElement {
             </div>
             <div>
               <dt>Webhook</dt>
-              <dd>{monitor.webhook_url ?? 'not configured (mock provider will be used)'}</dd>
+              <dd>{monitor.webhook_url ?? 'not configured'}</dd>
+            </div>
+            <div>
+              <dt>Notify email</dt>
+              <dd>{monitor.notify_email ?? 'not configured'}</dd>
             </div>
           </dl>
           <button

@@ -13,6 +13,8 @@ export interface Monitor {
   checkIntervalSeconds: number;
   enabled: boolean;
   webhookUrl: string | null;
+  /** Optional change-notification recipient for the SMTP email provider. */
+  notifyEmail: string | null;
   createdAt: string;
   updatedAt: string;
 }

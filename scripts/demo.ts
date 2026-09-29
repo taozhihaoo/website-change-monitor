@@ -141,6 +141,7 @@ async function main(): Promise<void> {
     checkIntervalSeconds: 300,
     enabled: true,
     webhookUrl: null,
+    notifyEmail: null,
   });
   console.log(
     `Monitor created:\n  id        ${monitor.id}\n  url       ${monitor.url}\n  selector  css ${monitor.selector}`,

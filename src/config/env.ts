@@ -22,6 +22,18 @@ export const envSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   DEFAULT_NOTIFICATION_PROVIDER: z.enum(['none', 'mock']).default('none'),
+
+  // SMTP email notifications (optional — email provider registers only when
+  // SMTP_HOST is set). Credentials live exclusively in the environment.
+  SMTP_HOST: z.string().trim().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_USER: z.string().trim().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().trim().min(1).optional(),
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export interface AppConfig {
@@ -38,6 +50,12 @@ export interface AppConfig {
   dnsTimeoutMs: number;
   /** Per-monitor snapshot cap; 0 disables pruning (unlimited). */
   maxSnapshotsPerMonitor: number;
+  smtpHost: string | null;
+  smtpPort: number;
+  smtpUser: string | null;
+  smtpPassword: string | null;
+  smtpFrom: string | null;
+  smtpSecure: boolean;
   allowPrivateTargets: boolean;
   defaultNotificationProvider: 'none' | 'mock';
 }
@@ -59,6 +77,12 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     maxSnapshotsPerMonitor: parsed.MAX_SNAPSHOTS_PER_MONITOR,
     allowPrivateTargets: parsed.ALLOW_PRIVATE_TARGETS,
     defaultNotificationProvider: parsed.DEFAULT_NOTIFICATION_PROVIDER,
+    smtpHost: parsed.SMTP_HOST ?? null,
+    smtpPort: parsed.SMTP_PORT,
+    smtpUser: parsed.SMTP_USER ?? null,
+    smtpPassword: parsed.SMTP_PASSWORD ?? null,
+    smtpFrom: parsed.SMTP_FROM ?? null,
+    smtpSecure: parsed.SMTP_SECURE,
   };
 }
 

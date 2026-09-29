@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { TestNotificationResult } from '../../src/notifications/notification-service.js';
 import { WebhookNotifier } from '../../src/notifications/webhook-notifier.js';
 import { MockNotifier } from '../../src/notifications/mock-notifier.js';
 import type { NotificationProvider } from '../../src/notifications/provider.js';
@@ -51,7 +50,7 @@ function makeStackWithRealProviders(hook: WebhookServer): ServiceStack {
   const logger = silentLogger();
   const stack = buildStack({
     providers: new Map<string, NotificationProvider>([
-      ['webhook', new WebhookNotifier({ timeoutMs: 2_000, urlGuardOptions })],
+      ['webhook', new WebhookNotifier({ timeoutMs: 2_000, urlGuardOptions, dnsResolver: null })],
       ['mock', new MockNotifier(logger)],
     ]),
     webhookMaxAttempts: 3,
@@ -260,20 +259,21 @@ describe('NotificationService', () => {
     }
   });
 
-  it('sendTestNotification uses the webhook when configured and reports failures', async () => {
+  it('sendTestNotification reports per-provider results for every configured target', async () => {
     const stack = makeStackWithRealProviders(hook);
     try {
       const monitor = stack.createMonitor({ webhookUrl: hook.url });
-      const ok = (await stack.notificationService.sendTestNotification(monitor)) as TestNotificationResult;
-      expect(ok).toMatchObject({ provider: 'webhook', delivered: true, error: null });
+      const ok = await stack.notificationService.sendTestNotification(monitor);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]).toMatchObject({ provider: 'webhook', delivered: true, error: null });
 
       hook.setHandler((_req, res) => {
         res.statusCode = 401;
         res.end('denied');
       });
       const failing = await stack.notificationService.sendTestNotification(monitor);
-      expect(failing).toMatchObject({ provider: 'webhook', delivered: false });
-      expect(failing.error).toContain('401');
+      expect(failing[0]).toMatchObject({ provider: 'webhook', delivered: false });
+      expect(failing[0]?.error).toContain('401');
       hook.setHandler((_req, res) => {
         res.statusCode = 200;
         res.end('ok');
@@ -281,7 +281,59 @@ describe('NotificationService', () => {
 
       const noWebhook = stack.createMonitor();
       const viaMock = await stack.notificationService.sendTestNotification(noWebhook);
-      expect(viaMock).toMatchObject({ provider: 'mock', delivered: true });
+      expect(viaMock[0]).toMatchObject({ provider: 'mock', delivered: true });
+    } finally {
+      cleanupStack(stack);
+    }
+  });
+
+  it('a monitor with both webhook and email receives deliveries on every route', async () => {
+    const emailProvider: NotificationProvider = {
+      name: 'email',
+      send: async () => undefined,
+    };
+    const stack = buildStack({
+      providers: new Map<string, NotificationProvider>([
+        ['webhook', new WebhookNotifier({ timeoutMs: 2_000, urlGuardOptions: { allowPrivateTargets: true }, dnsResolver: null })],
+        ['email', emailProvider],
+      ]),
+      defaultNotificationProvider: 'none',
+    });
+    try {
+      const monitor = stack.createMonitor({
+        webhookUrl: hook.url,
+        notifyEmail: 'owner@example.com',
+      });
+      stack.setExtraction(() => Promise.resolve({ content: 'e1', durationMs: 1 }));
+      await stack.checkService.runCheck(monitor, 'schedule');
+      stack.setExtraction(() => Promise.resolve({ content: 'e2', durationMs: 1 }));
+      const outcome = await stack.checkService.runCheck(monitor, 'schedule');
+      await outcome.notification;
+
+      const deliveries = stack.repos.deliveries.listByMonitor(monitor.id, 10);
+      expect(deliveries.map((delivery) => delivery.provider).sort()).toEqual([
+        'email',
+        'webhook',
+      ]);
+      const emailDelivery = deliveries.find((delivery) => delivery.provider === 'email');
+      expect(emailDelivery?.target).toBe('owner@example.com');
+      expect(emailDelivery?.status).toBe('sent');
+    } finally {
+      cleanupStack(stack);
+    }
+  });
+
+  it('an email target without a registered email provider logs and skips (no crash)', async () => {
+    const stack = buildStack({ defaultNotificationProvider: 'none' });
+    try {
+      const monitor = stack.createMonitor({ notifyEmail: 'owner@example.com' });
+      stack.setExtraction(() => Promise.resolve({ content: 'f1', durationMs: 1 }));
+      await stack.checkService.runCheck(monitor, 'schedule');
+      stack.setExtraction(() => Promise.resolve({ content: 'f2', durationMs: 1 }));
+      const outcome = await stack.checkService.runCheck(monitor, 'schedule');
+      await outcome.notification;
+      expect(outcome.run.status).toBe('changed');
+      expect(stack.repos.deliveries.listByMonitor(monitor.id, 10)).toHaveLength(0);
     } finally {
       cleanupStack(stack);
     }
@@ -294,15 +346,16 @@ describe('NotificationService', () => {
       webhookMaxAttempts: 2,
       retryBaseDelayMs: 1,
       providers: new Map<string, NotificationProvider>([
-        ['webhook', new WebhookNotifier({ timeoutMs: 2_000, urlGuardOptions: strictGuard })],
+        ['webhook', new WebhookNotifier({ timeoutMs: 2_000, urlGuardOptions: strictGuard, dnsResolver: null })],
         ['mock', new MockNotifier(silentLogger())],
       ]),
     });
     try {
       const monitor = stack.createMonitor({ webhookUrl: 'http://127.0.0.1:9999/hook' });
-      const result = await stack.notificationService.sendTestNotification(monitor);
-      expect(result.delivered).toBe(false);
-      expect(result.error).toContain('not allowed');
+      const results = await stack.notificationService.sendTestNotification(monitor);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ provider: 'webhook', delivered: false });
+      expect(results[0]?.error).toContain('not allowed');
     } finally {
       cleanupStack(stack);
     }

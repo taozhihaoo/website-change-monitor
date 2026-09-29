@@ -20,6 +20,7 @@ export function serializeMonitor(monitor: Monitor): Record<string, unknown> {
     check_interval_seconds: monitor.checkIntervalSeconds,
     enabled: monitor.enabled,
     webhook_url: monitor.webhookUrl,
+    notify_email: monitor.notifyEmail,
     created_at: monitor.createdAt,
     updated_at: monitor.updatedAt,
   };

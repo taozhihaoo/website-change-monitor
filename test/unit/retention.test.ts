@@ -3,7 +3,6 @@ import {
   buildStack,
   cleanupStack,
   constantExtraction,
-  type ServiceStack,
 } from '../helpers/test-stack.js';
 
 describe('snapshot retention', () => {

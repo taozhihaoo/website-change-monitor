@@ -23,7 +23,7 @@ export interface NotificationServiceDeps {
   maxAttempts: number;
   retryBaseDelayMs: number;
   urlGuardOptions: UrlGuardOptions;
-  /** Used when a monitor has no webhook configured: 'none' | 'mock'. */
+  /** Used when a monitor has neither webhook nor email configured: 'none' | 'mock'. */
   defaultProvider: 'none' | 'mock';
 }
 
@@ -35,7 +35,7 @@ export interface NotificationServiceDeps {
  */
 function storableTarget(providerName: string, target: string): string {
   if (providerName !== 'webhook') {
-    return target; // e.g. 'mock'
+    return target; // 'mock' or an email address
   }
   try {
     new URL(target);
@@ -45,67 +45,69 @@ function storableTarget(providerName: string, target: string): string {
   }
 }
 
+interface DeliveryRoute {
+  providerName: string;
+  provider: NotificationProvider;
+  target: string;
+}
+
 /**
- * Routes change events to the configured notification provider with bounded
- * retries. Failures are recorded in notification_deliveries and logged; they
- * NEVER fail the check that produced the change event.
+ * Routes change events to every configured notification target (webhook
+ * and/or SMTP email) with bounded retries per target. Failures are recorded
+ * in notification_deliveries and logged; they NEVER fail the check that
+ * produced the change event.
  */
 export class NotificationService {
   constructor(private readonly deps: NotificationServiceDeps) {}
 
   /**
-   * Delivers a change notification. Resolves when delivery attempts are
+   * Delivers change notifications. Resolves when all delivery attempts are
    * exhausted (success or final failure) so callers can await it in tests;
    * the check pipeline normally fires it without awaiting.
    */
   async notifyChange(monitor: Monitor, event: ChangeEvent): Promise<void> {
-    const providerName = monitor.webhookUrl !== null ? 'webhook' : this.deps.defaultProvider;
-    if (providerName === 'none') {
+    const routes = this.resolveRoutes(monitor);
+    if (routes.length === 0) {
       return;
     }
-    const provider = this.deps.providers.get(providerName);
-    if (!provider) {
-      this.deps.logger.warn({ provider: providerName }, 'notification provider not registered');
-      return;
-    }
-
-    const target = monitor.webhookUrl ?? 'mock';
-    const payload: NotificationPayload = {
-      event: 'content_changed',
-      monitor_id: monitor.id,
-      monitor_name: monitor.name,
-      url: monitor.url,
-      detected_at: event.detectedAt,
-      previous_hash: event.previousHash,
-      current_hash: event.currentHash,
-      diff: event.diff,
-    };
-
-    const now = this.deps.clock.now().toISOString();
-    const delivery = this.deps.deliveryRepo.create({
-      id: newId(),
-      changeEventId: event.id,
-      monitorId: monitor.id,
-      provider: providerName,
-      target: storableTarget(providerName, target),
-      createdAt: now,
-    });
-
-    await this.deliver(provider, payload, target, delivery.id);
+    await Promise.all(routes.map((route) => this.deliverChange(monitor, event, route)));
   }
 
   /**
-   * Sends a test notification for a monitor (uses webhook when configured,
-   * mock otherwise). Does not persist anything.
+   * Sends a test notification through every configured target (webhook and/or
+   * email; mock when neither is configured). Does not persist anything.
    */
-  async sendTestNotification(monitor: Monitor): Promise<TestNotificationResult> {
-    const providerName = monitor.webhookUrl !== null ? 'webhook' : 'mock';
-    const provider = this.deps.providers.get(providerName);
-    if (!provider) {
-      return { provider: providerName, delivered: false, error: 'Provider not registered.' };
+  async sendTestNotification(monitor: Monitor): Promise<TestNotificationResult[]> {
+    const routes: DeliveryRoute[] = [];
+    if (monitor.webhookUrl !== null) {
+      const provider = this.deps.providers.get('webhook');
+      if (provider) {
+        routes.push({ providerName: 'webhook', provider, target: monitor.webhookUrl });
+      }
+    }
+    if (monitor.notifyEmail !== null) {
+      const provider = this.deps.providers.get('email');
+      if (provider) {
+        routes.push({ providerName: 'email', provider, target: monitor.notifyEmail });
+      }
+    }
+    if (routes.length === 0) {
+      const mock = this.deps.providers.get('mock');
+      if (mock) {
+        routes.push({ providerName: 'mock', provider: mock, target: 'mock' });
+      }
     }
 
-    const target = monitor.webhookUrl ?? 'mock';
+    if (routes.length === 0) {
+      return [
+        {
+          provider: 'none',
+          delivered: false,
+          error: 'No notification provider is available.',
+        },
+      ];
+    }
+
     const payload: NotificationPayload = {
       event: 'test',
       monitor_id: monitor.id,
@@ -117,21 +119,95 @@ export class NotificationService {
       diff: { added: 0, removed: 0, changes: [] },
     };
 
-    try {
-      await provider.send(payload, target);
-      this.deps.logger.info(
-        { provider: providerName, monitorId: monitor.id },
-        'test notification sent',
-      );
-      return { provider: providerName, delivered: true, error: null };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Notification failed.';
-      this.deps.logger.warn(
-        { provider: providerName, monitorId: monitor.id, error: message },
-        'test notification failed',
-      );
-      return { provider: providerName, delivered: false, error: message };
+    return Promise.all(
+      routes.map(async (route): Promise<TestNotificationResult> => {
+        try {
+          await route.provider.send(payload, route.target);
+          this.deps.logger.info(
+            { provider: route.providerName, monitorId: monitor.id },
+            'test notification sent',
+          );
+          return { provider: route.providerName, delivered: true, error: null };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Notification failed.';
+          this.deps.logger.warn(
+            { provider: route.providerName, monitorId: monitor.id, error: message },
+            'test notification failed',
+          );
+          return { provider: route.providerName, delivered: false, error: message };
+        }
+      }),
+    );
+  }
+
+  /**
+   * Explicit targets first (webhook and/or email). When a monitor has none,
+   * fall back to the default provider ('none' → no delivery at all, 'mock' →
+   * logged delivery used by the demo/tests).
+   */
+  private resolveRoutes(monitor: Monitor): DeliveryRoute[] {
+    const routes: DeliveryRoute[] = [];
+
+    if (monitor.webhookUrl !== null) {
+      const provider = this.deps.providers.get('webhook');
+      if (provider) {
+        routes.push({ providerName: 'webhook', provider, target: monitor.webhookUrl });
+      } else {
+        this.deps.logger.warn('webhook target configured but webhook provider not registered');
+      }
     }
+
+    if (monitor.notifyEmail !== null) {
+      const provider = this.deps.providers.get('email');
+      if (provider) {
+        routes.push({ providerName: 'email', provider, target: monitor.notifyEmail });
+      } else {
+        this.deps.logger.warn(
+          'email target configured but email provider not registered (SMTP_HOST missing?)',
+        );
+      }
+    }
+
+    if (routes.length === 0 && this.deps.defaultProvider !== 'none') {
+      const provider = this.deps.providers.get(this.deps.defaultProvider);
+      if (provider) {
+        routes.push({
+          providerName: this.deps.defaultProvider,
+          provider,
+          target: 'mock',
+        });
+      }
+    }
+
+    return routes;
+  }
+
+  private async deliverChange(
+    monitor: Monitor,
+    event: ChangeEvent,
+    route: DeliveryRoute,
+  ): Promise<void> {
+    const payload: NotificationPayload = {
+      event: 'content_changed',
+      monitor_id: monitor.id,
+      monitor_name: monitor.name,
+      url: monitor.url,
+      detected_at: event.detectedAt,
+      previous_hash: event.previousHash,
+      current_hash: event.currentHash,
+      diff: event.diff,
+    };
+
+    const delivery = this.deps.deliveryRepo.create({
+      id: newId(),
+      changeEventId: event.id,
+      monitorId: monitor.id,
+      provider: route.providerName,
+      target: storableTarget(route.providerName, route.target),
+      createdAt: this.deps.clock.now().toISOString(),
+    });
+
+    await this.deliver(route.provider, payload, route.target, delivery.id);
   }
 
   private async deliver(

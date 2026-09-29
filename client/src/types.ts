@@ -9,6 +9,7 @@ export interface Monitor {
   check_interval_seconds: number;
   enabled: boolean;
   webhook_url: string | null;
+  notify_email: string | null;
   created_at: string;
   updated_at: string;
 }

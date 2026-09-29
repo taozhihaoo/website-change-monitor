@@ -107,4 +107,11 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX idx_change_events_monitor ON change_events(monitor_id, detected_at DESC);
     `,
   },
+  {
+    version: 3,
+    name: 'monitors-add-notify-email',
+    sql: `
+      ALTER TABLE monitors ADD COLUMN notify_email TEXT;
+    `,
+  },
 ];

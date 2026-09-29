@@ -11,6 +11,7 @@ export interface NewMonitor {
   checkIntervalSeconds: number;
   enabled: boolean;
   webhookUrl: string | null;
+  notifyEmail: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ export interface MonitorPatch {
   checkIntervalSeconds?: number;
   enabled?: boolean;
   webhookUrl?: string | null;
+  notifyEmail?: string | null;
 }
 
 interface MonitorRow {
@@ -34,6 +36,7 @@ interface MonitorRow {
   check_interval_seconds: number;
   enabled: 0 | 1;
   webhook_url: string | null;
+  notify_email: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +57,7 @@ function rowToMonitor(row: MonitorRow): Monitor {
     checkIntervalSeconds: row.check_interval_seconds,
     enabled: row.enabled === 1,
     webhookUrl: row.webhook_url,
+    notifyEmail: row.notify_email,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -100,8 +104,8 @@ export class MonitorRepository {
         .prepare(
           `
           INSERT INTO monitors
-            (id, name, url, selector, selector_type, check_interval_seconds, enabled, webhook_url, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, name, url, selector, selector_type, check_interval_seconds, enabled, webhook_url, notify_email, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         )
         .run(
@@ -113,6 +117,7 @@ export class MonitorRepository {
           monitor.checkIntervalSeconds,
           monitor.enabled ? 1 : 0,
           monitor.webhookUrl,
+          monitor.notifyEmail,
           monitor.createdAt,
           monitor.updatedAt,
         );
@@ -197,6 +202,10 @@ export class MonitorRepository {
       if (patch.webhookUrl !== undefined) {
         assignments.push('webhook_url = ?');
         values.push(patch.webhookUrl);
+      }
+      if (patch.notifyEmail !== undefined) {
+        assignments.push('notify_email = ?');
+        values.push(patch.notifyEmail);
       }
 
       if (assignments.length === 0) {

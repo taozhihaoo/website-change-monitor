@@ -43,6 +43,24 @@ describe('migrations', () => {
     expect(versions).toEqual(MIGRATIONS.map((migration) => migration.version));
   });
 
+  it('migration 3 adds monitors.notify_email for SMTP notifications', () => {
+    migrate(db);
+    const columns = (
+      db.prepare("PRAGMA table_info(monitors)").all() as Array<{ name: string }>
+    ).map((column) => column.name);
+    expect(columns).toContain('notify_email');
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO monitors (id, name, url, selector, selector_type, check_interval_seconds, enabled, webhook_url, notify_email, created_at, updated_at)
+       VALUES ('m9', 'n', 'https://example.com', '.a', 'css', 300, 1, NULL, 'owner@example.com', ?, ?)`,
+    ).run(now, now);
+    const row = db.prepare('SELECT notify_email FROM monitors WHERE id = ?').get('m9') as {
+      notify_email: string;
+    };
+    expect(row.notify_email).toBe('owner@example.com');
+  });
+
   it('is idempotent (running twice applies nothing new)', () => {
     migrate(db);
     expect(() => migrate(db)).not.toThrowError();
