@@ -1,0 +1,24 @@
+# --- secrets & environment ---
+.env
+.env.local
+.env.*.local
+
+# --- dependencies ---
+node_modules/
+
+# --- build output ---
+dist/
+client/dist/
+client/node_modules/.vite/
+
+# --- runtime data (SQLite database lives here) ---
+data/
+
+# --- tooling ---
+coverage/
+*.log
+.vite/
+
+# --- OS noise ---
+Thumbs.db
+.DS_Store
