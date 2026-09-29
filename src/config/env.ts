@@ -23,6 +23,17 @@ export const envSchema = z.object({
     .transform((value) => value === 'true'),
   DEFAULT_NOTIFICATION_PROVIDER: z.enum(['none', 'mock']).default('none'),
 
+  // Optional single-user API key. When set, every API route except /health
+  // requires `Authorization: Bearer <key>`. Leave unset for a trusted-network
+  // deployment without authentication (see README Security section).
+  APP_API_KEY: z
+    .string()
+    .trim()
+    .refine((value) => value.length === 0 || value.length >= 16, {
+      message: 'APP_API_KEY must be at least 16 characters.',
+    })
+    .optional(),
+
   // SMTP email notifications (optional — email provider registers only when
   // SMTP_HOST is set). Credentials live exclusively in the environment.
   SMTP_HOST: z.string().trim().min(1).optional(),
@@ -56,6 +67,8 @@ export interface AppConfig {
   smtpPassword: string | null;
   smtpFrom: string | null;
   smtpSecure: boolean;
+  /** Optional single-user API key; null disables authentication. */
+  appApiKey: string | null;
   allowPrivateTargets: boolean;
   defaultNotificationProvider: 'none' | 'mock';
 }
@@ -83,6 +96,8 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     smtpPassword: parsed.SMTP_PASSWORD ?? null,
     smtpFrom: parsed.SMTP_FROM ?? null,
     smtpSecure: parsed.SMTP_SECURE,
+    appApiKey:
+      parsed.APP_API_KEY === undefined || parsed.APP_API_KEY === '' ? null : parsed.APP_API_KEY,
   };
 }
 

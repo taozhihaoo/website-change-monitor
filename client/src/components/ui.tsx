@@ -1,10 +1,50 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { setApiKey } from '../api/client.js';
 
 export function Spinner({ label = 'Loading…' }: { label?: string }): ReactElement {
   return (
     <div className="spinner-row" role="status">
       <span className="spinner" aria-hidden="true" />
       <span>{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Minimal unlock form shown when the server responds 401 (APP_API_KEY set).
+ * The key is kept in localStorage and sent as a Bearer token — deliberately
+ * not an auth framework for a single-user tool.
+ */
+export function ApiKeyPrompt({ onSaved }: { onSaved: () => void }): ReactElement {
+  const [value, setValue] = useState('');
+  return (
+    <div className="card apikey-card">
+      <h2>API key required</h2>
+      <p className="page-intro">
+        This instance is protected with an API key (<code>APP_API_KEY</code>). Enter it once —
+        it is stored in this browser and sent as a Bearer token.
+      </p>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setApiKey(value.trim());
+          onSaved();
+        }}
+      >
+        <label>
+          API key
+          <input
+            type="password"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            required
+            autoFocus
+          />
+        </label>
+        <button type="submit" className="btn btn-primary">
+          Save and continue
+        </button>
+      </form>
     </div>
   );
 }

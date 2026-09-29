@@ -17,7 +17,7 @@ import { Scheduler } from '../../../src/scheduler/scheduler.js';
 import { buildApp } from '../../../src/api/app.js';
 import type { FastifyInstance } from 'fastify';
 import { createLogger, type Logger } from '../../../src/utils/logger.js';
-import { MutableClock, type StackOptions } from '../../helpers/test-stack.js';
+import { MutableClock } from '../../helpers/test-stack.js';
 
 export interface RealStack {
   db: Db;
@@ -56,7 +56,12 @@ function trackMock(logger: Logger): { payloads: unknown[]; provider: Notificatio
  * real SQLite (temp file), real Fastify app (via inject()) — pointed at local
  * fixture pages only. Used by integration tests and the demo.
  */
-export async function buildRealStack(options: StackOptions = {}): Promise<RealStack> {
+export interface RealStackOptions {
+  defaultNotificationProvider?: 'none' | 'mock';
+  appApiKey?: string | null;
+}
+
+export async function buildRealStack(options: RealStackOptions = {}): Promise<RealStack> {
   const dataDir = await mkdtemp(join(tmpdir(), 'wcm-it-'));
   const db = openDatabase(join(dataDir, 'test.db'));
   migrate(db);
@@ -134,8 +139,17 @@ export async function buildRealStack(options: StackOptions = {}): Promise<RealSt
       schedulerTickMs: 60_000,
       webhookTimeoutMs: 3_000,
       webhookMaxAttempts: 2,
+      dnsTimeoutMs: 1_000,
+      maxSnapshotsPerMonitor: 0,
       allowPrivateTargets: true,
-      defaultNotificationProvider: 'mock',
+      defaultNotificationProvider: options.defaultNotificationProvider ?? 'mock',
+      smtpHost: null,
+      smtpPort: 587,
+      smtpUser: null,
+      smtpPassword: null,
+      smtpFrom: null,
+      smtpSecure: false,
+      appApiKey: options.appApiKey ?? null,
     },
     logger,
     repos,

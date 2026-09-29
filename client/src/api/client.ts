@@ -18,12 +18,35 @@ interface ErrorEnvelope {
   error?: { code?: string; message?: string; details?: unknown };
 }
 
+const API_KEY_STORAGE = 'wcm.apiKey';
+
+export function getApiKey(): string {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setApiKey(key: string): void {
+  try {
+    localStorage.setItem(API_KEY_STORAGE, key);
+  } catch {
+    // storage unavailable (private mode) — key applies to this session only
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const key = getApiKey();
   let response: Response;
   try {
     response = await fetch(path, {
-      headers: { 'content-type': 'application/json' },
       ...init,
+      headers: {
+        'content-type': 'application/json',
+        ...(key !== '' ? { authorization: `Bearer ${key}` } : {}),
+        ...init.headers,
+      },
     });
   } catch {
     throw new ApiError('Cannot reach the server. Is the backend running?', 'NETWORK', 0);

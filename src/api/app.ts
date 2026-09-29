@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { AppConfig } from '../config/env.js';
+import { sha256Hex } from '../utils/hash.js';
 import type { Logger } from '../utils/logger.js';
 import type { MonitorService } from '../services/monitor-service.js';
 import type { CheckService } from '../services/check-service.js';
@@ -40,11 +42,44 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     bodyLimit: 64 * 1024,
   });
 
-  // IMPORTANT: error/not-found handlers must be installed BEFORE any
-  // register() call — awaited register boots the plugin contexts, and
-  // handlers installed afterwards silently stop applying to them.
+  // IMPORTANT: hooks/error handlers must be installed BEFORE any register()
+  // call — awaited register boots the plugin contexts, and handlers installed
+  // afterwards silently stop applying to them.
   let spaFallbackAvailable = false;
   installErrorHandlers(app, deps.logger, () => spaFallbackAvailable);
+
+  // Optional single-user API key protection. /health stays public for
+  // liveness probes; the built SPA shell stays public (its API calls carry
+  // the key). Comparison is timing-safe: both sides are hashed to fixed
+  // 32-byte digests before comparison, and the key never appears in logs or
+  // error payloads.
+  if (deps.config.appApiKey !== null) {
+    const expectedDigest = Buffer.from(sha256Hex(deps.config.appApiKey), 'hex');
+    app.addHook('onRequest', async (request, reply) => {
+      const path = request.url.split('?')[0] ?? request.url;
+      if (path === '/health') {
+        return;
+      }
+      const isApiPath =
+        path === '/stats' ||
+        path === '/scheduler/status' ||
+        path.startsWith('/monitors') ||
+        path.startsWith('/scheduler');
+      if (!isApiPath) {
+        return;
+      }
+      const header = request.headers.authorization;
+      const provided =
+        typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : '';
+      const providedDigest = Buffer.from(sha256Hex(provided), 'hex');
+      const authorized = provided.length > 0 && timingSafeEqual(providedDigest, expectedDigest);
+      if (!authorized) {
+        await reply.code(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'A valid API key is required.' },
+        });
+      }
+    });
+  }
 
   const staticRoot = clientDistDir();
   if (staticRoot !== null) {

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
-import { api, formatDateTime, formatInterval } from '../api/client.js';
+import { api, ApiError, formatDateTime, formatInterval } from '../api/client.js';
 import type { MonitorWithSummary, Stats } from '../types.js';
-import { EmptyState, EnabledBadge, ErrorBox, Spinner, StatusBadge } from '../components/ui.js';
+import { ApiKeyPrompt, EmptyState, EnabledBadge, ErrorBox, Spinner, StatusBadge } from '../components/ui.js';
 
 export function DashboardPage(): ReactElement {
   const [stats, setStats] = useState<Stats | null>(null);
   const [monitors, setMonitors] = useState<MonitorWithSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
 
@@ -20,8 +21,13 @@ export function DashboardPage(): ReactElement {
       setStats(statsResult);
       setMonitors(listResult.monitors);
       setError(null);
+      setAuthRequired(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.code === 'UNAUTHORIZED') {
+        setAuthRequired(true);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, []);
 
@@ -47,8 +53,19 @@ export function DashboardPage(): ReactElement {
     }
   };
 
-  if (monitors === null && error === null) {
+  if (monitors === null && error === null && !authRequired) {
     return <Spinner label="Loading dashboard…" />;
+  }
+
+  if (authRequired) {
+    return (
+      <ApiKeyPrompt
+        onSaved={() => {
+          setAuthRequired(false);
+          void load();
+        }}
+      />
+    );
   }
 
   return (

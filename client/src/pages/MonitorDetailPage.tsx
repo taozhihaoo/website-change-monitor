@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, formatDateTime, formatInterval } from '../api/client.js';
+import { api, ApiError, formatDateTime, formatInterval } from '../api/client.js';
 import type {
   ChangeEvent,
   CheckRun,
@@ -9,7 +9,7 @@ import type {
 } from '../types.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { MonitorForm, describeError, type MonitorFormValues } from '../components/MonitorForm.js';
-import { DeliveryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui.js';
+import { ApiKeyPrompt, DeliveryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui.js';
 import { DiffView } from '../components/DiffView.js';
 
 interface DetailData {
@@ -24,6 +24,7 @@ export function MonitorDetailPage(): ReactElement {
   const navigate = useNavigate();
   const [data, setData] = useState<DetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const [busy, setBusy] = useState<'run' | 'edit' | 'notify' | 'toggle' | 'delete' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -47,8 +48,13 @@ export function MonitorDetailPage(): ReactElement {
         runs: runsRes.runs,
       });
       setError(null);
+      setAuthRequired(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.code === 'UNAUTHORIZED') {
+        setAuthRequired(true);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, [id]);
 
@@ -56,7 +62,17 @@ export function MonitorDetailPage(): ReactElement {
     void load();
   }, [load]);
 
-  if (id === undefined || (data === null && error !== null)) {
+  if (id === undefined || (data === null && (error !== null || authRequired))) {
+    if (authRequired) {
+      return (
+        <ApiKeyPrompt
+          onSaved={() => {
+            setAuthRequired(false);
+            void load();
+          }}
+        />
+      );
+    }
     return error !== null ? (
       <ErrorBox message={error} onRetry={() => void load()} />
     ) : (
