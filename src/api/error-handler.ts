@@ -24,6 +24,7 @@ export function statusForAppError(err: AppError): number {
     case 'VALIDATION_ERROR':
     case 'INVALID_URL':
     case 'URL_NOT_ALLOWED':
+    case 'DNS_ERROR':
       return 400;
     case 'MONITOR_NOT_FOUND':
     case 'NOT_FOUND':

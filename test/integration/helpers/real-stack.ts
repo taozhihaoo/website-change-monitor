@@ -66,7 +66,10 @@ export async function buildRealStack(options: StackOptions = {}): Promise<RealSt
   const urlGuardOptions = { allowPrivateTargets: true };
 
   const browserManager = new BrowserManager({ headless: true }, logger);
-  const extraction = new ExtractionService(browserManager, logger, urlGuardOptions);
+  const extraction = new ExtractionService(browserManager, logger, urlGuardOptions, {
+    resolve4: async () => ['93.184.216.34'],
+    resolve6: async () => [],
+  });
 
   const monitorService = new MonitorService({
     monitorRepo: repos.monitors,
@@ -81,7 +84,7 @@ export async function buildRealStack(options: StackOptions = {}): Promise<RealSt
   const mock = trackMock(logger);
   const notificationService = new NotificationService({
     providers: new Map<string, NotificationProvider>([
-      ['webhook', new WebhookNotifier({ timeoutMs: 3_000, urlGuardOptions })],
+      ['webhook', new WebhookNotifier({ timeoutMs: 3_000, urlGuardOptions, dnsResolver: null })],
       ['mock', mock.provider],
     ]),
     deliveryRepo: repos.deliveries,

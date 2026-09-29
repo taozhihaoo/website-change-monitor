@@ -4,6 +4,10 @@ import { AppError } from '../domain/errors.js';
 import type { BrowserManager } from '../browser/browser-manager.js';
 import type { Logger } from '../utils/logger.js';
 import { assertSafePublicUrl, type UrlGuardOptions } from '../utils/url-guard.js';
+import {
+  assertPublicDnsResolution,
+  type HostResolver,
+} from '../utils/dns-guard.js';
 
 export interface ExtractionRequest {
   url: string;
@@ -36,10 +40,14 @@ export class ExtractionService {
     private readonly browserManager: BrowserManager,
     private readonly logger: Logger,
     private readonly urlGuardOptions: UrlGuardOptions,
+    private readonly dnsResolver: HostResolver | null = null,
   ) {}
 
   async extract(request: ExtractionRequest): Promise<ExtractionResult> {
-    assertSafePublicUrl(request.url, this.urlGuardOptions);
+    const parsedUrl = assertSafePublicUrl(request.url, this.urlGuardOptions);
+    if (!this.urlGuardOptions.allowPrivateTargets && this.dnsResolver !== null) {
+      await assertPublicDnsResolution(parsedUrl.hostname, { resolver: this.dnsResolver });
+    }
     const startedAt = Date.now();
     try {
       const content = await this.browserManager.withPage((page) =>

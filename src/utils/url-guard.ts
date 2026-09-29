@@ -100,6 +100,18 @@ export function isSafePublicUrl(input: string, options: UrlGuardOptions): boolea
   }
 }
 
+/**
+ * Classifies a parsed IP literal (IPv4 or IPv6) against the blocked ranges.
+ * Used by the URL guard for literals and by the DNS guard for resolved
+ * addresses.
+ */
+export function isBlockedIpAddress(ip: string): boolean {
+  if (ip.includes(':')) {
+    return isBlockedIpv6(ip);
+  }
+  return isBlockedIpv4(ip);
+}
+
 function blockedTargetMessage(): string {
   return (
     'Monitoring localhost, private-network or link-local targets is not allowed. ' +

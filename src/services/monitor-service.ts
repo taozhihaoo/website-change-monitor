@@ -12,6 +12,10 @@ import {
   assertSafePublicUrl,
   type UrlGuardOptions,
 } from '../utils/url-guard.js';
+import {
+  assertPublicDnsResolution,
+  type HostResolver,
+} from '../utils/dns-guard.js';
 import type { ExtractionService } from './extraction-service.js';
 import { sha256Hex } from '../utils/hash.js';
 import { normalizeContent } from '../utils/normalize.js';
@@ -51,6 +55,7 @@ export class MonitorService {
       monitorRepo: MonitorRepository;
       extraction: ExtractionService;
       urlGuardOptions: UrlGuardOptions;
+      dnsResolver: HostResolver | null;
       clock: Clock;
       logger: Logger;
       defaultTimeoutMs: number;
@@ -58,8 +63,19 @@ export class MonitorService {
     },
   ) {}
 
-  create(input: CreateMonitorInput): Monitor {
-    assertSafePublicUrl(input.url, this.deps.urlGuardOptions);
+  /**
+   * IP-layer guard plus (when enabled) DNS resolution guard for a monitor
+   * URL. Shared by create and update.
+   */
+  private async assertSafeTarget(url: string): Promise<void> {
+    const parsed = assertSafePublicUrl(url, this.deps.urlGuardOptions);
+    if (!this.deps.urlGuardOptions.allowPrivateTargets && this.deps.dnsResolver !== null) {
+      await assertPublicDnsResolution(parsed.hostname, { resolver: this.deps.dnsResolver });
+    }
+  }
+
+  async create(input: CreateMonitorInput): Promise<Monitor> {
+    await this.assertSafeTarget(input.url);
     const now = this.deps.clock.now().toISOString();
     const monitor = this.deps.monitorRepo.create({
       id: newId(),
@@ -97,10 +113,10 @@ export class MonitorService {
     return this.deps.monitorRepo.listWithSummary();
   }
 
-  update(id: string, patch: UpdateMonitorInput): Monitor {
+  async update(id: string, patch: UpdateMonitorInput): Promise<Monitor> {
     this.get(id);
     if (patch.url !== undefined) {
-      assertSafePublicUrl(patch.url, this.deps.urlGuardOptions);
+      await this.assertSafeTarget(patch.url);
     }
     const monitor = this.deps.monitorRepo.update(id, patch, this.deps.clock.now().toISOString());
     if (monitor === null) {

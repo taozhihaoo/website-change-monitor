@@ -24,7 +24,7 @@ describe('website change monitoring (full pipeline)', () => {
   });
 
   it('baseline → unchanged → changed → idempotent, end to end', async () => {
-    const monitor = stack.monitorService.create({
+    const monitor = await stack.monitorService.create({
       name: 'Acme product price',
       url: site.url,
       selector: '.product-price',
@@ -83,7 +83,7 @@ describe('website change monitoring (full pipeline)', () => {
   });
 
   it('supports xpath selectors', async () => {
-    const monitor = stack.monitorService.create({
+    const monitor = await stack.monitorService.create({
       name: 'Xpath stock',
       url: site.url,
       selector: '//p[@class="product-stock"]',
@@ -98,7 +98,7 @@ describe('website change monitoring (full pipeline)', () => {
   });
 
   it('supports text selectors', async () => {
-    const monitor = stack.monitorService.create({
+    const monitor = await stack.monitorService.create({
       name: 'Text price',
       url: site.url,
       selector: '$',
@@ -114,7 +114,7 @@ describe('website change monitoring (full pipeline)', () => {
   });
 
   it('a missing selector records SELECTOR_NOT_FOUND and keeps monitoring alive', async () => {
-    const monitor = stack.monitorService.create({
+    const monitor = await stack.monitorService.create({
       name: 'Broken selector',
       url: site.url,
       selector: '.does-not-exist',
@@ -128,7 +128,7 @@ describe('website change monitoring (full pipeline)', () => {
     expect(outcome.run.errorCode).toBe('SELECTOR_NOT_FOUND');
 
     // the monitor still works once the selector matches again
-    const working = stack.monitorService.create({
+    const working = await stack.monitorService.create({
       name: 'Recovers',
       url: site.url,
       selector: '.product-name',

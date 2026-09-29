@@ -15,6 +15,7 @@ export const envSchema = z.object({
   SCHEDULER_TICK_MS: z.coerce.number().int().min(1_000).default(10_000),
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(100).default(8_000),
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  DNS_TIMEOUT_MS: z.coerce.number().int().min(100).default(5_000),
   ALLOW_PRIVATE_TARGETS: z
     .enum(['true', 'false'])
     .default('false')
@@ -33,6 +34,7 @@ export interface AppConfig {
   schedulerTickMs: number;
   webhookTimeoutMs: number;
   webhookMaxAttempts: number;
+  dnsTimeoutMs: number;
   allowPrivateTargets: boolean;
   defaultNotificationProvider: 'none' | 'mock';
 }
@@ -50,6 +52,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     schedulerTickMs: parsed.SCHEDULER_TICK_MS,
     webhookTimeoutMs: parsed.WEBHOOK_TIMEOUT_MS,
     webhookMaxAttempts: parsed.WEBHOOK_MAX_ATTEMPTS,
+    dnsTimeoutMs: parsed.DNS_TIMEOUT_MS,
     allowPrivateTargets: parsed.ALLOW_PRIVATE_TARGETS,
     defaultNotificationProvider: parsed.DEFAULT_NOTIFICATION_PROVIDER,
   };

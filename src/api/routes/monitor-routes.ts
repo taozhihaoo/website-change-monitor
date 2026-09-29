@@ -44,7 +44,7 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
 
   app.post('/monitors', async (request, reply) => {
     const body = createMonitorSchema.parse(request.body);
-    const monitor = deps.monitorService.create({
+    const monitor = await deps.monitorService.create({
       name: body.name,
       url: body.url,
       selector: body.selector,
@@ -76,7 +76,7 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
       ...(body.webhook_url !== undefined ? { webhookUrl: body.webhook_url } : {}),
     };
-    const monitor = deps.monitorService.update(id, patch);
+    const monitor = await deps.monitorService.update(id, patch);
     return { monitor: serializeMonitor(monitor) };
   });
 

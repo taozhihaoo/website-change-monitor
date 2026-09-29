@@ -17,6 +17,7 @@ import { BoundedQueue } from './scheduler/queue.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { buildApp } from './api/app.js';
 import { systemClock } from './utils/clock.js';
+import { createSystemResolver } from './utils/dns-guard.js';
 
 const PACKAGE_VERSION = '0.1.0';
 
@@ -41,13 +42,15 @@ async function main(): Promise<void> {
   const repos = createRepositories(db);
 
   const urlGuardOptions = { allowPrivateTargets: config.allowPrivateTargets };
+  const dnsResolver = createSystemResolver(config.dnsTimeoutMs);
   const browserManager = new BrowserManager({ headless: config.browserHeadless }, logger);
-  const extractionService = new ExtractionService(browserManager, logger, urlGuardOptions);
+  const extractionService = new ExtractionService(browserManager, logger, urlGuardOptions, dnsResolver);
 
   const monitorService = new MonitorService({
     monitorRepo: repos.monitors,
     extraction: extractionService,
     urlGuardOptions,
+    dnsResolver,
     clock: systemClock,
     logger,
     defaultTimeoutMs: config.defaultTimeoutMs,
@@ -56,7 +59,10 @@ async function main(): Promise<void> {
 
   const notificationService = new NotificationService({
     providers: new Map<string, NotificationProvider>([
-      ['webhook', new WebhookNotifier({ timeoutMs: config.webhookTimeoutMs, urlGuardOptions })],
+      [
+        'webhook',
+        new WebhookNotifier({ timeoutMs: config.webhookTimeoutMs, urlGuardOptions, dnsResolver }),
+      ],
       ['mock', new MockNotifier(logger)],
     ]),
     deliveryRepo: repos.deliveries,

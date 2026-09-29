@@ -6,6 +6,7 @@ import { createLogger, type Logger } from '../../src/utils/logger.js';
 import { systemClock, type Clock } from '../../src/utils/clock.js';
 import type { ExtractionRequest, ExtractionResult } from '../../src/services/extraction-service.js';
 import type { ExtractionService } from '../../src/services/extraction-service.js';
+import type { HostResolver } from '../../src/utils/dns-guard.js';
 import { CheckService } from '../../src/services/check-service.js';
 import { MonitorService } from '../../src/services/monitor-service.js';
 import { NotificationService } from '../../src/notifications/notification-service.js';
@@ -72,7 +73,15 @@ export interface StackOptions {
   retryBaseDelayMs?: number;
   providers?: Map<string, NotificationProvider>;
   clock?: MutableClock;
+  /** Resolver handed to MonitorService/ExtractionService for DNS guarding. */
+  dnsResolver?: HostResolver | null;
 }
+
+/** Offline default: every hostname resolves to a public IP. */
+export const defaultFakeResolver: HostResolver = {
+  resolve4: async () => ['93.184.216.34'],
+  resolve6: async () => [],
+};
 
 /**
  * Builds the full service stack over an in-memory database with a stubbed
@@ -130,6 +139,9 @@ export function buildStack(options: StackOptions = {}): ServiceStack {
     monitorRepo: repos.monitors,
     extraction,
     urlGuardOptions,
+    dnsResolver:
+      options.dnsResolver ??
+      (defaultFakeResolver as HostResolver | null),
     clock,
     logger,
     defaultTimeoutMs: 5_000,

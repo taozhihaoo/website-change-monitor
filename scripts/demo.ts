@@ -133,7 +133,7 @@ async function main(): Promise<void> {
     defaultSettleMs: config.extractionSettleMs,
   });
 
-  const monitor = monitorService.create({
+  const monitor = await monitorService.create({
     name: 'Demo: Acme product price',
     url: site.url,
     selector: '.product-price',

@@ -221,6 +221,73 @@ describe('CheckService (core pipeline)', () => {
     }
   });
 
+  it('DNS guard: monitor creation rejects hostnames that resolve privately', async () => {
+    const stack = buildStack({
+      urlGuardOptions: { allowPrivateTargets: false },
+      dnsResolver: {
+        resolve4: async (hostname) =>
+          hostname === 'sneaky.example.com' ? ['127.0.0.1'] : ['93.184.216.34'],
+        resolve6: async () => [],
+      },
+    });
+    try {
+      await expect(
+        stack.monitorService.create({
+          name: 'Sneaky',
+          url: 'https://sneaky.example.com/page',
+          selector: '.price',
+          selectorType: 'css',
+          checkIntervalSeconds: 300,
+          enabled: true,
+          webhookUrl: null,
+        }),
+      ).rejects.toMatchObject({ code: 'URL_NOT_ALLOWED' });
+
+      // public resolution is accepted
+      const ok = await stack.monitorService.create({
+        name: 'Public',
+        url: 'https://fine.example.com/page',
+        selector: '.price',
+        selectorType: 'css',
+        checkIntervalSeconds: 300,
+        enabled: true,
+        webhookUrl: null,
+      });
+      expect(ok.name).toBe('Public');
+    } finally {
+      cleanupStack(stack);
+    }
+  });
+
+  it('DNS guard: unresolvable hostname fails creation with a safe DNS_ERROR', async () => {
+    const stack = buildStack({
+      urlGuardOptions: { allowPrivateTargets: false },
+      dnsResolver: {
+        resolve4: async () => {
+          throw new Error('query ENOTFOUND gone.example.com');
+        },
+        resolve6: async () => {
+          throw new Error('query ENOTFOUND gone.example.com');
+        },
+      },
+    });
+    try {
+      await expect(
+        stack.monitorService.create({
+          name: 'Gone',
+          url: 'https://gone.example.com/page',
+          selector: '.price',
+          selectorType: 'css',
+          checkIntervalSeconds: 300,
+          enabled: true,
+          webhookUrl: null,
+        }),
+      ).rejects.toMatchObject({ code: 'DNS_ERROR' });
+    } finally {
+      cleanupStack(stack);
+    }
+  });
+
   it('every failed attempt still produces exactly one check_run', async () => {
     const stack = makeStack();
     try {
