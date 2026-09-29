@@ -233,11 +233,11 @@ Schema is created by numbered, transactional migrations embedded in the server (
 129 offline tests (Vitest) — no internet, no real target sites, no real SMTP:
 
 ```bash
-npm test                 # 94 unit tests: url+dns guards, normalize/hash/diff,
+npm test                 # 105 unit tests: url+dns guards, normalize/hash/diff,
                          # pipeline semantics (A→B→A→B regression), email
                          # provider (injected transport), retention, retries,
                          # scheduler, queue, serializers, CRUD, migrations
-npm run test:integration # 35 integration tests: real Chromium + local fixture
+npm run test:integration # 24 integration tests: real Chromium + local fixture
                          # server + real SQLite + HTTP API (fastify inject),
                          # API-key protection, scheduler restart recovery,
                          # browser crash relaunch
@@ -304,8 +304,8 @@ website-change-monitor/
 │   └── src/{api,components,pages}
 ├── fixtures/               # site-v1.html / site-v2.html (offline demo)
 ├── scripts/                # demo, fixture server, E2E verification
-├── test/unit/              # 94 unit tests
-├── test/integration/       # 35 integration tests (real browser, offline)
+├── test/unit/              # 105 unit tests
+├── test/integration/       # 24 integration tests (real browser, offline)
 └── docs/screenshots/       # real screenshots from a running instance
 ```
 
