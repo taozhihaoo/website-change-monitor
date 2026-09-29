@@ -237,6 +237,73 @@ describe('HTTP API', () => {
     expect(deliveries?.[0]?.last_error ?? '').not.toContain('http');
   });
 
+  it('input robustness: unknown fields, pagination bounds, oversized bodies, invalid email', async () => {
+    // unknown JSON fields are ignored, not echoed or rejected with 500
+    const withExtra = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: {
+        name: 'Extra fields',
+        url: site.url,
+        selector: '.product-price',
+        admin: true,
+        role: 'owner',
+      },
+    });
+    expect(withExtra.statusCode).toBe(201);
+    const extraMonitor = (withExtra.json() as { monitor: Record<string, unknown> }).monitor;
+    expect(extraMonitor.admin).toBeUndefined();
+
+    // pagination boundaries are validated on paginated sub-resources
+    const paginationId = (withExtra.json() as { monitor: { id: string } }).monitor.id;
+    for (const query of ['limit=0', 'limit=200', 'offset=-1', 'limit=abc']) {
+      const response = await stack.app.inject({
+        method: 'GET',
+        url: `/monitors/${paginationId}/runs?${query}`,
+      });
+      expect(response.statusCode, query).toBe(400);
+    }
+
+    // oversized payloads hit the 64 KB body limit with a clean error
+    const oversized = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: { name: 'x', url: site.url, selector: '.a'.repeat(80_000) },
+    });
+    expect(oversized.statusCode).toBe(413);
+    expect((oversized.json() as { error: { code: string } }).error.code).toBe('REQUEST_ERROR');
+
+    // invalid notification email is rejected at validation time
+    const badEmail = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: {
+        name: 'Bad email',
+        url: site.url,
+        selector: '.product-price',
+        notify_email: 'not-an-email',
+      },
+    });
+    expect(badEmail.statusCode).toBe(400);
+    expect(JSON.stringify(badEmail.json())).toContain('valid email');
+
+    // setting a valid notify_email works and round-trips
+    const goodEmail = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: {
+        name: 'Good email',
+        url: site.url,
+        selector: '.product-price',
+        notify_email: 'owner@example.com',
+      },
+    });
+    expect(goodEmail.statusCode).toBe(201);
+    expect(
+      (goodEmail.json() as { monitor: { notify_email: string | null } }).monitor.notify_email,
+    ).toBe('owner@example.com');
+  });
+
   it('GET /stats aggregates dashboard numbers', async () => {
     const response = await stack.app.inject({ method: 'GET', url: '/stats' });
     expect(response.statusCode).toBe(200);
