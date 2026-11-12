@@ -5,7 +5,7 @@
  * clean API errors. Run: node scripts/e2e-verify.mjs
  */
 import { createServer } from 'node:http';
-import { readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -26,7 +26,22 @@ const check = (name, ok, detail = '') => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function waitFor(predicate, timeoutMs = 8_000, intervalMs = 100) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) {
+      return true;
+    }
+    await sleep(intervalMs);
+  }
+  return Boolean(await predicate());
+}
+
 async function main() {
+  // data/ is gitignored, so a fresh checkout (CI) does not contain it. Both
+  // the fixture page and the SQLite file live there.
+  await mkdir(join(ROOT, 'data'), { recursive: true });
+
   // clean state
   await rm(DB_PATH, { force: true });
   await rm(`${DB_PATH}-wal`, { force: true });
@@ -70,7 +85,18 @@ async function main() {
     },
     stdio: ['ignore', 'ignore', 'inherit'],
   });
-  await sleep(2500);
+
+  // Poll instead of guessing a fixed startup delay — CI machines are slower.
+  const healthy = await waitFor(async () => {
+    try {
+      return (await fetch(`${BASE}/health`)).ok;
+    } catch {
+      return false;
+    }
+  }, 20_000);
+  if (!healthy) {
+    throw new Error('The built server did not become healthy within 20s.');
+  }
 
   try {
     const api = async (method, path, payload) => {
@@ -120,10 +146,11 @@ async function main() {
       outcome.change_event?.previous_content === '$99' &&
         outcome.change_event?.current_content === '$89',
     );
-    await sleep(300);
+    const firstHook = await waitFor(() => hookLog.length >= 1);
     check(
       'webhook #1 received',
-      hookLog.length === 1 &&
+      firstHook &&
+        hookLog.length === 1 &&
         hookLog[0].event === 'content_changed' &&
         hookLog[0].monitor_id === id,
     );
@@ -137,19 +164,19 @@ async function main() {
     // B→A (revert) — a real change under Phase 2 semantics
     await writeFile(FIXTURE_PAGE, await readFile(join(ROOT, 'fixtures', 'site-v1.html'), 'utf8'));
     outcome = await run();
-    await sleep(300);
     check(
       'B→A is a real change',
       outcome.run.status === 'changed' && outcome.change_event?.current_content === '$99',
     );
-    check('webhook #2 received', hookLog.length === 2);
+    const secondHook = await waitFor(() => hookLog.length >= 2);
+    check('webhook #2 received', secondHook && hookLog.length === 2);
 
     // A→B again — yet another new event + webhook
     await writeFile(FIXTURE_PAGE, await readFile(join(ROOT, 'fixtures', 'site-v2.html'), 'utf8'));
     outcome = await run();
-    await sleep(300);
     check('A→B again is a new change', outcome.run.status === 'changed' && outcome.change_event !== null);
-    check('webhook #3 received (3 total)', hookLog.length === 3);
+    const thirdHook = await waitFor(() => hookLog.length >= 3);
+    check('webhook #3 received (3 total)', thirdHook && hookLog.length === 3);
     check('three change events recorded', (await changeCount()) === 3);
 
     const changes = (await api('GET', `/monitors/${id}/changes?limit=50`)).body.changes;
