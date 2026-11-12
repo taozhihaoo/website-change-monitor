@@ -19,6 +19,7 @@ function makeMonitor(overrides: Partial<NewMonitor> = {}): NewMonitor {
     checkIntervalSeconds: 300,
     enabled: true,
     webhookUrl: null,
+    notifyEmail: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -83,7 +84,9 @@ describe('repositories (SQLite CRUD)', () => {
       const monitor = repos.monitors.create(makeMonitor());
       const empty = repos.monitors.getByIdWithSummary(monitor.id);
       expect(empty?.lastCheckAt).toBeNull();
-      expect(empty?.nextCheckAt).toBeNull();
+      // Never checked ⇒ the scheduler considers it immediately due, so the
+      // API must show a real timestamp instead of null.
+      expect(empty?.nextCheckAt).toBe(monitor.createdAt);
 
       repos.checkRuns.insert({
         id: 'r1',

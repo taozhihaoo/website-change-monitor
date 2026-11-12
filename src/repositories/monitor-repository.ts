@@ -71,10 +71,13 @@ function rowToMonitorWithSummary(row: MonitorSummaryRow): MonitorWithSummary {
     lastCheckAt,
     lastCheckStatus: row.last_check_status,
     lastChangeAt: row.last_change_at,
-    nextCheckAt:
-      monitor.enabled && lastCheckAt !== null
+    // A monitor that has never run is immediately due, so "next check" is
+    // its creation time rather than null (the scheduler treats null as due).
+    nextCheckAt: !monitor.enabled
+      ? null
+      : lastCheckAt !== null
         ? new Date(Date.parse(lastCheckAt) + monitor.checkIntervalSeconds * 1000).toISOString()
-        : null,
+        : monitor.createdAt,
   };
 }
 

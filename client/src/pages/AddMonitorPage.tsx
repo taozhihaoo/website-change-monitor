@@ -1,10 +1,13 @@
 import { type ReactElement } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { MonitorForm, type MonitorFormValues } from '../components/MonitorForm.js';
+import { Icon } from '../components/ui.js';
+import { useI18n } from '../i18n.js';
 
 export function AddMonitorPage(): ReactElement {
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const create = async (values: MonitorFormValues): Promise<void> => {
     const result = await api.post<{ monitor: { id: string } }>('/monitors', {
@@ -21,15 +24,23 @@ export function AddMonitorPage(): ReactElement {
   };
 
   return (
-    <div className="narrow">
-      <div className="page-header">
-        <h1>Add monitor</h1>
-      </div>
-      <p className="page-intro">
-        Point the monitor at a public page, pick the content to watch, and use “Test extraction”
-        to verify the selector before saving.
+    <div className="page narrow">
+      <p className="breadcrumb">
+        <Link to="/">
+          <Icon name="arrow-left" size={15} />
+          {t('action.back')}
+        </Link>
       </p>
-      <MonitorForm submitLabel="Create monitor" onSubmit={create} />
+
+      <header className="page-header">
+        <div className="page-heading">
+          <span className="eyebrow">{t('nav.add')}</span>
+          <h1>{t('form.addTitle')}</h1>
+          <p className="page-intro">{t('form.addSubtitle')}</p>
+        </div>
+      </header>
+
+      <MonitorForm submitLabel={t('action.createMonitor')} onSubmit={create} />
     </div>
   );
 }

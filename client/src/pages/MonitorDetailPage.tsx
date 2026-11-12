@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, formatDateTime, formatInterval } from '../api/client.js';
-import type {
-  ChangeEvent,
-  CheckRun,
-  MonitorWithSummary,
-  Snapshot,
-} from '../types.js';
+import { api, ApiError } from '../api/client.js';
+import type { ChangeEvent, CheckRun, MonitorWithSummary, Snapshot } from '../types.js';
+import { useI18n } from '../i18n.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
 import { MonitorForm, describeError, type MonitorFormValues } from '../components/MonitorForm.js';
-import { ApiKeyPrompt, DeliveryBadge, EmptyState, ErrorBox, Spinner, StatusBadge } from '../components/ui.js';
+import {
+  ApiKeyPrompt,
+  DeliveryBadge,
+  EmptyState,
+  ErrorBox,
+  Icon,
+  InfoMessage,
+  Spinner,
+  StatusBadge,
+} from '../components/ui.js';
 import { DiffView } from '../components/DiffView.js';
 
 interface DetailData {
@@ -22,6 +27,7 @@ interface DetailData {
 export function MonitorDetailPage(): ReactElement {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t, dateTime, dateTimeShort, interval } = useI18n();
   const [data, setData] = useState<DetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -76,11 +82,11 @@ export function MonitorDetailPage(): ReactElement {
     return error !== null ? (
       <ErrorBox message={error} onRetry={() => void load()} />
     ) : (
-      <Spinner label="Loading monitor…" />
+      <Spinner label={t('monitor.loading')} />
     );
   }
   if (data === null) {
-    return <Spinner label="Loading monitor…" />;
+    return <Spinner label={t('monitor.loading')} />;
   }
 
   const { monitor } = data;
@@ -93,10 +99,10 @@ export function MonitorDetailPage(): ReactElement {
       const result = await api.post<{ run: { status: string } }>(
         `/monitors/${monitor.id}/run?wait=1`,
       );
-      setMessage(`Check finished: ${result.run.status}`);
+      setMessage(t('monitor.checkFinished', { status: result.run.status }));
       await load();
     } catch (err) {
-      setMessage(describeError(err));
+      setMessage(describeError(err, t));
     } finally {
       setBusy(null);
     }
@@ -108,7 +114,7 @@ export function MonitorDetailPage(): ReactElement {
       await api.patch(`/monitors/${monitor.id}`, { enabled: !monitor.enabled });
       await load();
     } catch (err) {
-      setMessage(describeError(err));
+      setMessage(describeError(err, t));
     } finally {
       setBusy(null);
     }
@@ -122,11 +128,11 @@ export function MonitorDetailPage(): ReactElement {
         `/monitors/${monitor.id}/test-notification`,
       );
       const summary = result.results
-        .map((entry) => `${entry.provider}: ${entry.delivered ? 'delivered' : 'failed'}`)
+        .map((entry) => `${entry.provider}: ${entry.delivered ? t('status.sent') : t('status.failed')}`)
         .join(', ');
-      setMessage(`Test notification — ${summary}.`);
+      setMessage(t('monitor.testNotification', { summary }));
     } catch (err) {
-      setMessage(describeError(err));
+      setMessage(describeError(err, t));
     } finally {
       setBusy(null);
     }
@@ -144,7 +150,7 @@ export function MonitorDetailPage(): ReactElement {
       enabled: values.enabled,
     });
     setEditing(false);
-    setMessage('Monitor updated.');
+    setMessage(t('monitor.updated'));
     await load();
   };
 
@@ -154,173 +160,257 @@ export function MonitorDetailPage(): ReactElement {
       await api.delete(`/monitors/${monitor.id}`);
       navigate('/');
     } catch (err) {
-      setMessage(describeError(err));
+      setMessage(describeError(err, t));
       setBusy(null);
       setConfirmingDelete(false);
     }
   };
 
+  const triggerLabel = (trigger: string): string => {
+    const labels: Record<string, string> = {
+      schedule: t('trigger.schedule'),
+      manual: t('trigger.manual'),
+      test: t('trigger.test'),
+    };
+    return labels[trigger] ?? trigger;
+  };
+
   return (
-    <div>
+    <div className="page">
       <p className="breadcrumb">
-        <Link to="/">← All monitors</Link>
+        <Link to="/">
+          <Icon name="arrow-left" size={15} />
+          {t('action.back')}
+        </Link>
       </p>
 
-      <div className="page-header">
-        <h1>
-          {monitor.name} <StatusBadge status={monitor.last_check_status} />
-        </h1>
+      <header className="page-header">
+        <div className="page-heading">
+          <span className="eyebrow">
+            {t('nav.dashboard')} <span className="eyebrow-sep">/</span> {monitor.name}
+          </span>
+          <h1>
+            {monitor.name}
+            <StatusBadge status={monitor.last_check_status} />
+          </h1>
+          <p className="page-intro monitor-headline-url">
+            <Icon name="globe" size={14} />
+            <a href={monitor.url} target="_blank" rel="noreferrer">
+              {monitor.url}
+              <Icon name="external" size={12} />
+            </a>
+          </p>
+        </div>
         <div className="page-actions">
           <button type="button" className="btn" onClick={() => void runNow()} disabled={busy !== null}>
-            {busy === 'run' ? 'Checking…' : 'Run now'}
-          </button>
-          <button type="button" className="btn" onClick={() => void toggleEnabled()} disabled={busy !== null}>
-            {monitor.enabled ? 'Disable' : 'Enable'}
-          </button>
-          <button type="button" className="btn" onClick={() => setEditing((value) => !value)}>
-            {editing ? 'Close editor' : 'Edit'}
+            <Icon name="play" size={15} />
+            {busy === 'run' ? t('action.checking') : t('action.runNow')}
           </button>
           <button
             type="button"
-            className="btn btn-danger"
+            className="btn btn-ghost"
+            onClick={() => void toggleEnabled()}
+            disabled={busy !== null}
+          >
+            <Icon name={monitor.enabled ? 'clock' : 'pulse'} size={15} />
+            {monitor.enabled ? t('action.disable') : t('action.enable')}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setEditing((value) => !value)}>
+            <Icon name="pencil" size={15} />
+            {editing ? t('action.closeEditor') : t('action.edit')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger-ghost"
             onClick={() => setConfirmingDelete(true)}
             disabled={busy !== null}
           >
-            Delete
+            <Icon name="trash" size={15} />
+            {t('action.delete')}
           </button>
         </div>
-      </div>
+      </header>
 
-      {message !== null && <p className="info-message">{message}</p>}
+      {message !== null && <InfoMessage>{message}</InfoMessage>}
       {error !== null && <ErrorBox message={error} onRetry={() => void load()} />}
 
       {editing ? (
-        <MonitorForm initial={monitor} submitLabel="Save changes" onSubmit={saveEdit} />
+        <MonitorForm initial={monitor} submitLabel={t('action.saveChanges')} onSubmit={saveEdit} />
       ) : (
-        <div className="card config-card">
-          <h2>Configuration</h2>
-          <dl className="config-list">
+        <section className="card">
+          <header className="card-head">
             <div>
-              <dt>URL</dt>
-              <dd>
-                <a href={monitor.url} target="_blank" rel="noreferrer">
-                  {monitor.url}
-                </a>
-              </dd>
+              <h2>
+                <Icon name="code" size={17} /> {t('monitor.configuration')}
+              </h2>
             </div>
-            <div>
-              <dt>Selector</dt>
-              <dd className="mono">
-                {monitor.selector} <span className="badge">{monitor.selector_type}</span>
-              </dd>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => void sendTestNotification()}
+              disabled={busy !== null}
+            >
+              <Icon name="bell" size={14} />
+              {busy === 'notify' ? t('action.sending') : t('action.sendTest')}
+            </button>
+          </header>
+
+          <div className="config-grid">
+            <div className="config-item">
+              <span className="config-label">
+                <Icon name="search" size={14} /> {t('monitor.selector')}
+              </span>
+              <span className="config-value mono">
+                {monitor.selector}
+                <span className="type-chip">{monitor.selector_type}</span>
+              </span>
             </div>
-            <div>
-              <dt>Interval</dt>
-              <dd>
-                {formatInterval(monitor.check_interval_seconds)} ({monitor.check_interval_seconds}s)
-              </dd>
+            <div className="config-item">
+              <span className="config-label">
+                <Icon name="clock" size={14} /> {t('monitor.interval')}
+              </span>
+              <span className="config-value">{interval(monitor.check_interval_seconds)}</span>
             </div>
-            <div>
-              <dt>Schedule</dt>
-              <dd>
-                Last checked {formatDateTime(monitor.last_check_at)} · Next check{' '}
-                {formatDateTime(monitor.next_check_at)}
-              </dd>
+            <div className="config-item">
+              <span className="config-label">
+                <Icon name="pulse" size={14} /> {t('monitor.schedule')}
+              </span>
+              <span className="config-value">
+                {t('monitor.lastChecked')}: {dateTime(monitor.last_check_at)} ·{' '}
+                {t('monitor.nextCheck')}: {dateTime(monitor.next_check_at)}
+              </span>
             </div>
-            <div>
-              <dt>Webhook</dt>
-              <dd>{monitor.webhook_url ?? 'not configured'}</dd>
+            <div className="config-item">
+              <span className="config-label">
+                <Icon name="link" size={14} /> {t('monitor.webhook')}
+              </span>
+              <span className="config-value mono-small">
+                {monitor.webhook_url ?? t('monitor.notConfigured')}
+              </span>
             </div>
-            <div>
-              <dt>Notify email</dt>
-              <dd>{monitor.notify_email ?? 'not configured'}</dd>
+            <div className="config-item">
+              <span className="config-label">
+                <Icon name="mail" size={14} /> {t('monitor.notifyEmail')}
+              </span>
+              <span className="config-value">
+                {monitor.notify_email ?? t('monitor.notConfigured')}
+              </span>
             </div>
-          </dl>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() => void sendTestNotification()}
-            disabled={busy !== null}
-          >
-            {busy === 'notify' ? 'Sending…' : 'Send test notification'}
-          </button>
-        </div>
+          </div>
+        </section>
       )}
 
-      <div className="card">
-        <h2>Latest extracted content</h2>
+      <section className="card">
+        <header className="card-head">
+          <h2>
+            <Icon name="code" size={17} /> {t('monitor.latestContent')}
+          </h2>
+          {latestSnapshot !== null && (
+            <span className="count-chip">{latestSnapshot.content.length} chars</span>
+          )}
+        </header>
         {latestSnapshot === null ? (
-          <EmptyState title="No snapshot yet" hint="Run a check to capture the first baseline." />
+          <EmptyState
+            icon="radar"
+            title={t('monitor.noSnapshot')}
+            hint={t('monitor.noSnapshotHint')}
+            action={
+              <button type="button" className="btn btn-primary btn-small" onClick={() => void runNow()}>
+                <Icon name="play" size={14} />
+                {t('action.runNow')}
+              </button>
+            }
+          />
         ) : (
           <>
             <pre className="content-box">{latestSnapshot.content}</pre>
-            <p className="mono-small">
-              sha256: {latestSnapshot.content_hash} · captured {formatDateTime(latestSnapshot.checked_at)}
+            <p className="mono-small hash-line">
+              <span className="hash-label">sha256</span> {latestSnapshot.content_hash} ·{' '}
+              {t('monitor.captured')} {dateTime(latestSnapshot.checked_at)}
             </p>
           </>
         )}
-      </div>
+      </section>
 
-      <div className="card">
-        <h2>Change history ({data.changes.length})</h2>
+      <section className="card">
+        <header className="card-head">
+          <h2>
+            <Icon name="diff" size={17} /> {t('monitor.changeHistory')}
+          </h2>
+          <span className="count-chip">{data.changes.length}</span>
+        </header>
         {data.changes.length === 0 ? (
-          <EmptyState title="No changes detected yet" />
+          <EmptyState
+            icon="search"
+            title={t('monitor.noChanges')}
+            hint={t('monitor.noChangesHint')}
+          />
         ) : (
-          data.changes.map((event) => (
-            <details key={event.id} className="change-item">
-              <summary>
-                <span className="badge badge-changed">changed</span>{' '}
-                {formatDateTime(event.detected_at)} · +{event.diff.added} / −{event.diff.removed}
-                {event.deliveries.map((delivery) => (
-                  <DeliveryBadge key={delivery.id} status={delivery.status} />
-                ))}
-              </summary>
-              <div className="change-body">
-                <div className="change-columns">
-                  <div>
-                    <h3>Previous</h3>
-                    <pre className="content-box">{event.previous_content}</pre>
+          <div className="timeline">
+            {data.changes.map((event) => (
+              <details key={event.id} className="change-item">
+                <summary>
+                  <span className="timeline-dot" aria-hidden="true" />
+                  <span className="change-time">{dateTime(event.detected_at)}</span>
+                  <span className="diff-pill diff-pill-added">+{event.diff.added}</span>
+                  <span className="diff-pill diff-pill-removed">−{event.diff.removed}</span>
+                  <span className="change-deliveries">
+                    {event.deliveries.map((delivery) => (
+                      <DeliveryBadge key={delivery.id} status={delivery.status} />
+                    ))}
+                  </span>
+                  <Icon name="chevron" size={15} className="details-chevron" />
+                </summary>
+                <div className="change-body">
+                  <div className="change-columns">
+                    <div>
+                      <h3>{t('monitor.previous')}</h3>
+                      <pre className="content-box">{event.previous_content}</pre>
+                    </div>
+                    <div>
+                      <h3>{t('monitor.current')}</h3>
+                      <pre className="content-box">{event.current_content}</pre>
+                    </div>
                   </div>
-                  <div>
-                    <h3>Current</h3>
-                    <pre className="content-box">{event.current_content}</pre>
-                  </div>
+                  <DiffView diff={event.diff} />
+                  {event.deliveries.length > 0 && (
+                    <p className="mono-small hash-line">
+                      {event.deliveries
+                        .map(
+                          (delivery) =>
+                            `${delivery.provider}=${delivery.status}×${delivery.attempts}${
+                              delivery.last_error !== null ? ` (${delivery.last_error})` : ''
+                            }`,
+                        )
+                        .join(', ')}
+                    </p>
+                  )}
                 </div>
-                <h3>Diff</h3>
-                <DiffView diff={event.diff} />
-                {event.deliveries.length > 0 && (
-                  <p className="mono-small">
-                    notifications:{' '}
-                    {event.deliveries
-                      .map(
-                        (delivery) =>
-                          `${delivery.provider}=${delivery.status}×${delivery.attempts}${
-                            delivery.last_error !== null ? ` (${delivery.last_error})` : ''
-                          }`,
-                      )
-                      .join(', ')}
-                  </p>
-                )}
-              </div>
-            </details>
-          ))
+              </details>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
 
-      <div className="card">
-        <h2>Check history</h2>
+      <section className="card table-card">
+        <header className="card-head">
+          <h2>
+            <Icon name="clock" size={17} /> {t('monitor.checkHistory')}
+          </h2>
+          <span className="count-chip">{data.runs.length}</span>
+        </header>
         {data.runs.length === 0 ? (
-          <EmptyState title="No checks yet" hint="Use “Run now” to trigger the first check." />
+          <EmptyState icon="clock" title={t('monitor.noChecks')} hint={t('monitor.noChecksHint')} />
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Status</th>
-                  <th>Trigger</th>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Error</th>
+                  <th>{t('dashboard.table.status')}</th>
+                  <th>{t('monitor.trigger')}</th>
+                  <th>{t('monitor.started')}</th>
+                  <th>{t('monitor.duration')}</th>
+                  <th>{t('monitor.error')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -329,16 +419,20 @@ export function MonitorDetailPage(): ReactElement {
                     <td>
                       <StatusBadge status={run.status} />
                     </td>
-                    <td>{run.triggered_by}</td>
-                    <td>{formatDateTime(run.started_at)}</td>
-                    <td>{run.duration_ms} ms</td>
+                    <td>
+                      <span className="trigger-chip">{triggerLabel(run.triggered_by)}</span>
+                    </td>
+                    <td className="cell-time" title={dateTime(run.started_at)}>
+                      {dateTimeShort(run.started_at)}
+                    </td>
+                    <td className="cell-time">{run.duration_ms} ms</td>
                     <td>
                       {run.error_code !== null ? (
-                        <span title={run.error_message ?? ''} className="mono-small">
+                        <span title={run.error_message ?? ''} className="error-code">
                           {run.error_code}
                         </span>
                       ) : (
-                        '—'
+                        <span className="muted">—</span>
                       )}
                     </td>
                   </tr>
@@ -347,12 +441,12 @@ export function MonitorDetailPage(): ReactElement {
             </table>
           </div>
         )}
-      </div>
+      </section>
 
       {confirmingDelete && (
         <ConfirmDialog
-          title="Delete monitor"
-          message={`Delete "${monitor.name}"? Its snapshots, change events and check history will be removed. This cannot be undone.`}
+          title={t('monitor.deleteTitle')}
+          message={t('monitor.deleteMessage', { name: monitor.name })}
           onCancel={() => setConfirmingDelete(false)}
           onConfirm={() => void deleteMonitor()}
         />

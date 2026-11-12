@@ -46,7 +46,7 @@ async function startDemoSite(): Promise<{ url: string; pagePath: string; close: 
     ),
     'utf8',
   );
-  const server: Server = createServer((req, res) => {
+  const server: Server = createServer((_req, res) => {
     readFile(pagePath)
       .then((body) => {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     urlGuardOptions,
     clock: { now: () => new Date() },
     logger,
+    dnsResolver: null,
     defaultTimeoutMs: config.defaultTimeoutMs,
     defaultSettleMs: config.extractionSettleMs,
   });
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
   };
   const notificationService = new NotificationService({
     providers: new Map<string, NotificationProvider>([
-      ['webhook', new WebhookNotifier({ timeoutMs: 3_000, urlGuardOptions })],
+      ['webhook', new WebhookNotifier({ timeoutMs: 3_000, urlGuardOptions, dnsResolver: null })],
       ['mock', demoMock],
     ]),
     deliveryRepo: repos.deliveries,
@@ -115,7 +116,6 @@ async function main(): Promise<void> {
     logger,
     maxAttempts: 2,
     retryBaseDelayMs: 10,
-    urlGuardOptions,
     defaultProvider: 'mock',
   });
 
@@ -131,6 +131,7 @@ async function main(): Promise<void> {
     logger,
     defaultTimeoutMs: config.defaultTimeoutMs,
     defaultSettleMs: config.extractionSettleMs,
+    maxSnapshotsPerMonitor: config.maxSnapshotsPerMonitor,
   });
 
   const monitor = await monitorService.create({

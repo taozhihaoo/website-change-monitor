@@ -77,6 +77,12 @@ export class MonitorService {
 
   async create(input: CreateMonitorInput): Promise<Monitor> {
     await this.assertSafeTarget(input.url);
+    // Validate webhook targets at save time too, not only when a change
+    // eventually fires: a malformed or private URL otherwise fails silently
+    // for weeks until the first notification attempt.
+    if (input.webhookUrl !== null) {
+      await this.assertSafeTarget(input.webhookUrl);
+    }
     const now = this.deps.clock.now().toISOString();
     const monitor = this.deps.monitorRepo.create({
       id: newId(),
@@ -119,6 +125,9 @@ export class MonitorService {
     this.get(id);
     if (patch.url !== undefined) {
       await this.assertSafeTarget(patch.url);
+    }
+    if (patch.webhookUrl !== undefined && patch.webhookUrl !== null) {
+      await this.assertSafeTarget(patch.webhookUrl);
     }
     const monitor = this.deps.monitorRepo.update(id, patch, this.deps.clock.now().toISOString());
     if (monitor === null) {

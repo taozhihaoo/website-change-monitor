@@ -4,7 +4,9 @@ import { z } from 'zod';
 export const envSchema = z.object({
   APP_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DB_PATH: z.string().min(1).default('data/wcm.db'),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  LOG_LEVEL: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+    .default('info'),
   BROWSER_HEADLESS: z
     .enum(['true', 'false'])
     .default('true')
@@ -50,7 +52,7 @@ export const envSchema = z.object({
 export interface AppConfig {
   port: number;
   dbPath: string;
-  logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+  logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
   browserHeadless: boolean;
   maxConcurrentChecks: number;
   defaultTimeoutMs: number;

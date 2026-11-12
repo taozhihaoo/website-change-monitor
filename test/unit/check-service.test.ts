@@ -315,9 +315,9 @@ describe('CheckService (core pipeline)', () => {
       const monitorB = stack.createMonitor({ name: 'B', url: 'https://example.com/b' });
 
       // Slow extraction for A keeps it "busy" while B runs.
-      let releaseA: (() => void) | null = null;
+      const gateRef: { release?: () => void } = {};
       const gateA = new Promise<void>((resolve) => {
-        releaseA = resolve;
+        gateRef.release = resolve;
       });
       stack.setExtraction((request) =>
         request.url === monitorA.url
@@ -336,7 +336,7 @@ describe('CheckService (core pipeline)', () => {
       const outcomeB = await stack.checkService.runCheck(monitorB, 'manual');
       expect(outcomeB.run.status).toBe('baseline');
 
-      releaseA?.();
+      gateRef.release?.();
       const outcomeA = await first;
       expect(outcomeA.run.status).toBe('baseline');
       expect(stack.checkService.isBusy(monitorA.id)).toBe(false);

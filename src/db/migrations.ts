@@ -86,7 +86,16 @@ export const MIGRATIONS: readonly Migration[] = [
     // the constraint goes away; idempotency comes from comparing against the
     // previous snapshot instead (unchanged polls never reach the event path).
     // SQLite cannot drop a table constraint in place, so rebuild and copy.
+    // IMPORTANT: notification_deliveries has an ON DELETE CASCADE foreign key
+    // to change_events. A plain DROP TABLE of change_events fires that cascade
+    // and silently deletes the whole delivery history (SQLite's DROP TABLE
+    // performs an implicit DELETE FROM). PRAGMA defer_foreign_keys does NOT
+    // suppress cascade actions, so the child table is parked and rebuilt too.
     sql: `
+      CREATE TABLE notification_deliveries_backup AS
+        SELECT * FROM notification_deliveries;
+      DROP TABLE notification_deliveries;
+
       CREATE TABLE change_events_new (
         id TEXT PRIMARY KEY,
         monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
@@ -105,6 +114,23 @@ export const MIGRATIONS: readonly Migration[] = [
       DROP TABLE change_events;
       ALTER TABLE change_events_new RENAME TO change_events;
       CREATE INDEX idx_change_events_monitor ON change_events(monitor_id, detected_at DESC);
+
+      CREATE TABLE notification_deliveries (
+        id TEXT PRIMARY KEY,
+        change_event_id TEXT NOT NULL REFERENCES change_events(id) ON DELETE CASCADE,
+        monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        target TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO notification_deliveries SELECT * FROM notification_deliveries_backup;
+      DROP TABLE notification_deliveries_backup;
+      CREATE INDEX idx_deliveries_event ON notification_deliveries(change_event_id);
+      CREATE INDEX idx_deliveries_monitor ON notification_deliveries(monitor_id, created_at DESC);
     `,
   },
   {

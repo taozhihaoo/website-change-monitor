@@ -115,4 +115,55 @@ export class NotificationDeliveryRepository {
       return rows.map(rowToDelivery);
     });
   }
+
+  /**
+   * Fetches deliveries for a page of change events in ONE query, so the
+   * /changes endpoint does not issue N+1 lookups. Keys with no rows are
+   * absent from the returned map.
+   */
+  listByChangeEvents(changeEventIds: string[]): Map<string, NotificationDelivery[]> {
+    const grouped = new Map<string, NotificationDelivery[]>();
+    if (changeEventIds.length === 0) {
+      return grouped;
+    }
+    return withDb('delivery.listByChangeEvents', () => {
+      const placeholders = changeEventIds.map(() => '?').join(', ');
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM notification_deliveries
+           WHERE change_event_id IN (${placeholders})
+           ORDER BY created_at ASC`,
+        )
+        .all(...changeEventIds) as DeliveryRow[];
+      for (const row of rows) {
+        const bucket = grouped.get(row.change_event_id);
+        const delivery = rowToDelivery(row);
+        if (bucket === undefined) {
+          grouped.set(row.change_event_id, [delivery]);
+        } else {
+          bucket.push(delivery);
+        }
+      }
+      return grouped;
+    });
+  }
+
+  /**
+   * A process killed between creating a delivery row and updating its status
+   * leaves that row 'pending' forever. On startup we mark such rows as failed
+   * with an explicit reason instead of silently losing them or auto-resending
+   * (which could double-notify). Call before any new checks can run.
+   */
+  reconcilePendingDeliveries(now: string): number {
+    return withDb('delivery.reconcilePendingDeliveries', () => {
+      const result = this.db
+        .prepare(
+          `UPDATE notification_deliveries
+           SET status = 'failed', last_error = ?, updated_at = ?
+           WHERE status = 'pending'`,
+        )
+        .run('Interrupted by a restart; not re-sent automatically.', now);
+      return result.changes;
+    });
+  }
 }

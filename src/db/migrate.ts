@@ -19,6 +19,17 @@ export function migrate(db: Db, log?: (message: { version: number; name: string 
   }>;
   const applied = new Set(appliedRows.map((row) => row.version));
 
+  // Refuse to run against a database written by a newer version of the app:
+  // silently ignoring unknown migrations would corrupt the schema in use.
+  const latestKnown = MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0);
+  const unknownVersion = appliedRows.find((row) => row.version > latestKnown);
+  if (unknownVersion !== undefined) {
+    throw new Error(
+      `Database schema version ${unknownVersion.version} is newer than this build (${latestKnown}). ` +
+        'Upgrade the application instead of running an older binary against this database.',
+    );
+  }
+
   const insertApplied = db.prepare(
     'INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',
   );

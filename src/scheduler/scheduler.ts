@@ -88,11 +88,15 @@ export class Scheduler {
    * only skips disabled monitors for *automatic* runs.
    */
   runNow(monitor: Monitor): Promise<CheckOutcome> {
-    if (this.deps.checkService.isBusy(monitor.id)) {
-      return Promise.reject(
-        new AppError('MONITOR_BUSY', 'A check for this monitor is already in progress.'),
-      );
+    const busyMessage = 'A check for this monitor is already in progress.';
+    if (this.stopped || this.runningMonitors.has(monitor.id) || this.deps.checkService.isBusy(monitor.id)) {
+      return Promise.reject(new AppError('MONITOR_BUSY', busyMessage));
     }
+    // Manual runs must join the same in-flight set as scheduled runs.
+    // Otherwise a tick during a manual check dispatches a duplicate (which
+    // then fails with MONITOR_BUSY) and the manual run's finally deletes the
+    // scheduled run's marker, leaving /scheduler/status inaccurate.
+    this.runningMonitors.add(monitor.id);
     return this.deps.queue.submit(async () => {
       try {
         return await this.deps.checkService.runCheck(monitor, 'manual');

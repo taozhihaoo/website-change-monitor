@@ -80,7 +80,10 @@ export function installErrorHandlers(
 
     const statusCode = (err as HttpErrorLike).statusCode;
     if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
-      const message = err instanceof Error ? err.message : 'Request error.';
+      // Framework messages (malformed JSON, bad URL encoding, ...) can echo
+      // fragments of the raw request. Keep the envelope uniform and safe.
+      const message =
+        statusCode === 413 ? 'Request body is too large.' : 'The request could not be processed.';
       sendError(reply, statusCode, 'REQUEST_ERROR', message);
       return reply;
     }
@@ -101,12 +104,7 @@ export function installErrorHandlers(
       void reply.sendFile('index.html');
       return reply;
     }
-    sendError(
-      reply,
-      404,
-      'NOT_FOUND',
-      `Route ${request.method} ${request.url} was not found.`,
-    );
+    sendError(reply, 404, 'NOT_FOUND', 'The requested route was not found.');
     return reply;
   });
 }

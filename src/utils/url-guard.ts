@@ -36,6 +36,26 @@ const BLOCKED_IPV4_RANGES: IpRange[] = [
     name: 'private (192.168.0.0/16)',
     matches: (p) => (p[0] ?? -1) === 192 && (p[1] ?? -1) === 168,
   },
+  {
+    name: 'IETF protocol assignments (192.0.0.0/24)',
+    matches: (p) => (p[0] ?? -1) === 192 && (p[1] ?? -1) === 0 && (p[2] ?? -1) === 0,
+  },
+  {
+    name: 'documentation (192.0.2.0/24)',
+    matches: (p) => (p[0] ?? -1) === 192 && (p[1] ?? -1) === 0 && (p[2] ?? -1) === 2,
+  },
+  {
+    name: 'benchmark (198.18.0.0/15)',
+    matches: (p) => (p[0] ?? -1) === 198 && (p[1] ?? -1) >= 18 && (p[1] ?? -1) <= 19,
+  },
+  {
+    name: 'documentation (198.51.100.0/24)',
+    matches: (p) => (p[0] ?? -1) === 198 && (p[1] ?? -1) === 51 && (p[2] ?? -1) === 100,
+  },
+  {
+    name: 'documentation (203.0.113.0/24)',
+    matches: (p) => (p[0] ?? -1) === 203 && (p[1] ?? -1) === 0 && (p[2] ?? -1) === 113,
+  },
   { name: 'multicast/reserved (>= 224.0.0.0)', matches: (p) => (p[0] ?? -1) >= 224 },
 ];
 
@@ -43,9 +63,11 @@ const BLOCKED_IPV4_RANGES: IpRange[] = [
  * Validates a user-supplied URL for monitoring.
  *
  * Only public http(s) URLs are allowed. The guard blocks localhost, common
- * internal hostnames, loopback/private/link-local IPv4 and IPv6 literals and
- * IPv4-mapped IPv6 addresses. DNS-level (rebinding) protection is out of scope
- * for v1 and documented as a limitation.
+ * internal hostnames, loopback/private/link-local/reserved IPv4 and IPv6
+ * literals (including IPv4-mapped and IPv4-compatible forms). A separate DNS
+ * resolution guard (dns-guard.ts) checks the resolved A/AAAA records; DNS
+ * rebinding between that check and the actual connection remains a documented
+ * limitation.
  *
  * Throws INVALID_URL for malformed input and URL_NOT_ALLOWED for blocked
  * targets.
@@ -201,18 +223,23 @@ function isBlockedIpv6(host: string): boolean {
   const uniqueLocal = (first & 0xfe00) === 0xfc00; // fc00::/7
   const linkLocal = (first & 0xffc0) === 0xfe80; // fe80::/10
 
-  // IPv4-mapped ::ffff:0:0/96 — WHATWG URL canonicalizes to hex form
+  // WHATWG URL canonicalizes IPv4-mapped literals to hex form
   // (::ffff:8.8.8.8 becomes ::ffff:808:808), so decode the embedded IPv4 and
   // apply the IPv4 rules to it.
-  let v4Mapped = false;
-  if (groups.slice(0, 5).every((g) => g === 0) && (groups[5] ?? 0) === 0xffff) {
+  let embeddedV4Blocked = false;
+  const firstFiveZero = groups.slice(0, 5).every((g) => g === 0);
+  const v4Mapped = firstFiveZero && (groups[5] ?? 0) === 0xffff;
+  // IPv4-compatible ::/96 (e.g. ::7f00:1 == 127.0.0.1). Deprecated but still
+  // accepted by URL parsers and connectable, so treat it the same way.
+  const v4Compatible = firstFiveZero && (groups[5] ?? 0) === 0;
+  if (v4Mapped || v4Compatible) {
     const g6 = groups[6] ?? 0;
     const g7 = groups[7] ?? 0;
     const embeddedV4 = `${g6 >> 8}.${g6 & 0xff}.${g7 >> 8}.${g7 & 0xff}`;
-    v4Mapped = isBlockedIpv4(embeddedV4);
+    embeddedV4Blocked = isBlockedIpv4(embeddedV4);
   }
 
-  return loopback || unspecified || uniqueLocal || linkLocal || v4Mapped;
+  return loopback || unspecified || uniqueLocal || linkLocal || embeddedV4Blocked;
 }
 
 function parseHexGroup(group: string): number | null {

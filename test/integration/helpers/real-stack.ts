@@ -32,7 +32,7 @@ export interface RealStack {
   queue: BoundedQueue;
   app: FastifyInstance;
   clock: MutableClock;
-  mockPayloads: ReturnType<typeof trackMock>;
+  mockPayloads: unknown[];
   dataDir: string;
   close(): Promise<void>;
 }
@@ -80,6 +80,7 @@ export async function buildRealStack(options: RealStackOptions = {}): Promise<Re
     monitorRepo: repos.monitors,
     extraction,
     urlGuardOptions,
+    dnsResolver: null,
     clock,
     logger,
     defaultTimeoutMs: 10_000,
@@ -97,7 +98,6 @@ export async function buildRealStack(options: RealStackOptions = {}): Promise<Re
     logger,
     maxAttempts: 2,
     retryBaseDelayMs: 10,
-    urlGuardOptions,
     defaultProvider: options.defaultNotificationProvider ?? 'mock',
   });
 

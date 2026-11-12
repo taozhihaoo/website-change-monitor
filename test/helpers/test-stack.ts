@@ -119,7 +119,6 @@ export function buildStack(options: StackOptions = {}): ServiceStack {
     logger,
     maxAttempts: options.webhookMaxAttempts ?? 3,
     retryBaseDelayMs: options.retryBaseDelayMs ?? 1,
-    urlGuardOptions,
     defaultProvider: options.defaultNotificationProvider ?? 'none',
   });
 

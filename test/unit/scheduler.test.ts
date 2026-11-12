@@ -106,9 +106,11 @@ describe('Scheduler', () => {
       const { scheduler } = buildScheduler(stack);
       const monitor = stack.createMonitor({ checkIntervalSeconds: 60 });
 
-      let release: (() => void) | null = null;
+      // An object property avoids TS narrowing `release` to `never` when the
+      // assignment happens inside the Promise executor closure.
+      const gateRef: { release?: () => void } = {};
       const gate = new Promise<void>((resolve) => {
-        release = resolve;
+        gateRef.release = resolve;
       });
       stack.setExtraction(() => gate.then(() => ({ content: 'slow', durationMs: 1 })));
 
@@ -123,7 +125,7 @@ describe('Scheduler', () => {
       expect(status.activeChecks + status.queuedChecks).toBeLessThanOrEqual(1);
       expect(stack.repos.checkRuns.listByMonitor(monitor.id, 10)).toHaveLength(0); // still running
 
-      release?.();
+      gateRef.release?.();
       await stopping;
       expect(stack.repos.checkRuns.listByMonitor(monitor.id, 10)).toHaveLength(1);
     } finally {
@@ -178,16 +180,18 @@ describe('Scheduler', () => {
     try {
       const { scheduler } = buildScheduler(stack);
       const monitor = stack.createMonitor();
-      let release: (() => void) | null = null;
+      // An object property avoids TS narrowing `release` to `never` when the
+      // assignment happens inside the Promise executor closure.
+      const gateRef: { release?: () => void } = {};
       const gate = new Promise<void>((resolve) => {
-        release = resolve;
+        gateRef.release = resolve;
       });
       stack.setExtraction(() => gate.then(() => ({ content: 'slow', durationMs: 1 })));
 
       const scheduled = scheduler.runNow(monitor);
       await sleep(5);
       await expect(scheduler.runNow(monitor)).rejects.toMatchObject({ code: 'MONITOR_BUSY' });
-      release?.();
+      gateRef.release?.();
       await scheduled;
     } finally {
       cleanupStack(stack);

@@ -49,10 +49,12 @@ describe('browser lifecycle stability', () => {
 
     // contexts are closed after each use (no leak): the current browser has
     // no dangling contexts once withPage returned
+    // Browser.contexts is a METHOD — reading `.length` on the function object
+    // is always 0 and used to make this assertion vacuous.
     const withContexts = internals.browser as unknown as {
-      contexts?: unknown[];
+      contexts?: () => unknown[];
     };
-    expect((withContexts.contexts ?? []).length).toBe(0);
+    expect((withContexts.contexts?.() ?? []).length).toBe(0);
 
     // the full pipeline keeps working after the crash
     const monitor = await stack.monitorService.create({

@@ -304,6 +304,50 @@ describe('HTTP API', () => {
     ).toBe('owner@example.com');
   });
 
+  it('GET /monitors/:id/snapshots honours limit and offset', async () => {
+    const created = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: { name: 'Paged snapshots', url: site.url, selector: '.product-price' },
+    });
+    const id = (created.json() as { monitor: { id: string } }).monitor.id;
+    for (let i = 0; i < 3; i += 1) {
+      await stack.app.inject({ method: 'POST', url: `/monitors/${id}/run?wait=1` });
+    }
+    const all = await stack.app.inject({ method: 'GET', url: `/monitors/${id}/snapshots?limit=50` });
+    expect((all.json() as { snapshots: unknown[] }).snapshots).toHaveLength(3);
+
+    const first = await stack.app.inject({
+      method: 'GET',
+      url: `/monitors/${id}/snapshots?limit=2&offset=0`,
+    });
+    const second = await stack.app.inject({
+      method: 'GET',
+      url: `/monitors/${id}/snapshots?limit=2&offset=2`,
+    });
+    const pageOne = first.json() as { snapshots: Array<{ id: string }>; limit: number; offset: number };
+    const pageTwo = second.json() as { snapshots: Array<{ id: string }>; limit: number; offset: number };
+    expect(pageOne.snapshots).toHaveLength(2);
+    expect(pageTwo.snapshots).toHaveLength(1);
+    expect(pageOne.snapshots[0]?.id).not.toBe(pageTwo.snapshots[0]?.id);
+    expect([pageOne.limit, pageOne.offset, pageTwo.offset]).toEqual([2, 0, 2]);
+  });
+
+  it('rejects a malformed webhook URL at creation time (not on first change)', async () => {
+    const response = await stack.app.inject({
+      method: 'POST',
+      url: '/monitors',
+      payload: {
+        name: 'Bad webhook',
+        url: site.url,
+        selector: '.product-price',
+        webhook_url: 'not a url',
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect((response.json() as { error: { code: string } }).error.code).toBe('INVALID_URL');
+  });
+
   it('GET /stats aggregates dashboard numbers', async () => {
     const response = await stack.app.inject({ method: 'GET', url: '/stats' });
     expect(response.statusCode).toBe(200);

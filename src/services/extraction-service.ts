@@ -51,7 +51,7 @@ export class ExtractionService {
     const startedAt = Date.now();
     try {
       const content = await this.browserManager.withPage((page) =>
-        this.extractFromPage(page, request),
+        this.extractFromPage(page, request, parsedUrl.hostname),
       );
       if (content.trim().length === 0) {
         throw new AppError(
@@ -65,16 +65,83 @@ export class ExtractionService {
     }
   }
 
-  private async extractFromPage(page: Page, request: ExtractionRequest): Promise<string> {
+  private async extractFromPage(
+    page: Page,
+    request: ExtractionRequest,
+    initialHostname: string,
+  ): Promise<string> {
+    // All Playwright operations (locator queries included) inherit this
+    // timeout instead of the 30 s library default.
+    page.setDefaultTimeout(request.timeoutMs);
+
+    // A hard wall-clock budget for the whole extraction. goto(), load state
+    // and DOM queries each have their own timeout, but a slow page could still
+    // occupy a scheduler slot for several multiples of DEFAULT_TIMEOUT.
+    const deadlineMs = Math.max(5_000, request.timeoutMs * 2 + request.settleMs + 5_000);
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        // Closing the context aborts every in-flight Playwright operation,
+        // so the losing branch of the race cannot linger indefinitely.
+        void page.context().close().catch(() => undefined);
+        reject(new AppError('TIMEOUT', 'The check exceeded its total time budget.'));
+      }, deadlineMs);
+    });
+
+    try {
+      return await Promise.race([this.runExtraction(page, request, initialHostname), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async runExtraction(
+    page: Page,
+    request: ExtractionRequest,
+    initialHostname: string,
+  ): Promise<string> {
     // Skip heavy assets we cannot extract text from. Purely a performance and
     // politeness measure — not an anti-bot technique.
-    await page.route('**/*', (route) => {
-      const resourceType = route.request().resourceType();
+    //
+    // SECURITY: the URL/DNS guards only run on the initial URL by default,
+    // while Playwright follows redirects and fetches subresources itself.
+    // Validate every http(s) request here too, so a 302 (or an iframe/XHR)
+    // cannot bounce the browser into 127.0.0.1 / 169.254.169.254.
+    await page.route('**/*', async (route) => {
+      const browserRequest = route.request();
+      const resourceType = browserRequest.resourceType();
       if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
-        void route.abort();
+        await route.abort().catch(() => undefined);
         return;
       }
-      void route.continue();
+
+      const url = browserRequest.url();
+      if (/^https?:/i.test(url)) {
+        try {
+          assertSafePublicUrl(url, this.urlGuardOptions);
+          // Cross-origin navigations (i.e. redirects) also get the DNS layer.
+          // Subresources only get the cheap literal-IP check to avoid a DNS
+          // lookup per CDN asset on every poll.
+          if (
+            browserRequest.isNavigationRequest() &&
+            !this.urlGuardOptions.allowPrivateTargets &&
+            this.dnsResolver !== null
+          ) {
+            const hostname = new URL(url).hostname;
+            if (hostname !== initialHostname) {
+              await assertPublicDnsResolution(hostname, { resolver: this.dnsResolver });
+            }
+          }
+        } catch {
+          this.logger.debug(
+            { target: url.slice(0, 200) },
+            'blocked a navigation or subresource to a non-public target',
+          );
+          await route.abort().catch(() => undefined);
+          return;
+        }
+      }
+      await route.continue().catch(() => undefined);
     });
 
     const response = await page.goto(request.url, {

@@ -42,6 +42,10 @@ async function main(): Promise<void> {
   const db = openDatabase(config.dbPath);
   migrate(db, (info) => logger.info(info, 'migration applied'));
   const repos = createRepositories(db);
+  const interrupted = repos.deliveries.reconcilePendingDeliveries(new Date().toISOString());
+  if (interrupted > 0) {
+    logger.warn({ count: interrupted }, 'marked interrupted deliveries as failed');
+  }
 
   const urlGuardOptions = { allowPrivateTargets: config.allowPrivateTargets };
   const dnsResolver = createSystemResolver(config.dnsTimeoutMs);
@@ -92,7 +96,6 @@ async function main(): Promise<void> {
     logger,
     maxAttempts: config.webhookMaxAttempts,
     retryBaseDelayMs: 500,
-    urlGuardOptions,
     defaultProvider: config.defaultNotificationProvider,
   });
 
@@ -150,6 +153,9 @@ async function main(): Promise<void> {
     try {
       await app.close();
       await scheduler.stop();
+      // Notifications are fire-and-forget and still write delivery rows —
+      // let them settle before closing the database underneath them.
+      await notificationService.waitForIdle(10_000);
       await browserManager.close();
       db.close();
       logger.info('shutdown complete');

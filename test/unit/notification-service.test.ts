@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createServer, type Server } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebhookNotifier } from '../../src/notifications/webhook-notifier.js';
 import { MockNotifier } from '../../src/notifications/mock-notifier.js';
@@ -15,16 +20,17 @@ interface WebhookServer {
   server: Server;
   url: string;
   requests: Array<{ body: string; headers: Record<string, string | string[] | undefined> }>;
-  setHandler(handler: (req: { method?: string }, res: { statusCode: number; end: (b?: string) => void }) => void): void;
+  setHandler(handler: (req: IncomingMessage, res: ServerResponse) => void): void;
 }
+
+type WebhookHandler = (req: IncomingMessage, res: ServerResponse) => void;
 
 async function startWebhookServer(): Promise<WebhookServer> {
   const requests: WebhookServer['requests'] = [];
-  let handler: NonNullable<WebhookServer['setHandler']> extends (h: infer H) => void ? H : never =
-    (_req, res) => {
-      res.statusCode = 200;
-      res.end('ok');
-    };
+  let handler: WebhookHandler = (_req, res) => {
+    res.statusCode = 200;
+    res.end('ok');
+  };
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -45,7 +51,9 @@ async function startWebhookServer(): Promise<WebhookServer> {
   };
 }
 
-function makeStackWithRealProviders(hook: WebhookServer): ServiceStack {
+// The hook server is shared via the suite-scoped `hook` variable; the
+// parameter only documents that dependency for each call site.
+function makeStackWithRealProviders(_hook: WebhookServer): ServiceStack {
   const urlGuardOptions = { allowPrivateTargets: true };
   const logger = silentLogger();
   const stack = buildStack({
@@ -57,7 +65,6 @@ function makeStackWithRealProviders(hook: WebhookServer): ServiceStack {
     retryBaseDelayMs: 1,
     urlGuardOptions,
   });
-  (stack as { webhookHook: WebhookServer }).webhookHook = hook;
   return stack;
 }
 
@@ -279,9 +286,24 @@ describe('NotificationService', () => {
         res.end('ok');
       });
 
+      // defaultProvider is 'none' in this stack: a real change would send
+      // nothing, so the test button must NOT silently fall back to the mock
+      // and report success.
       const noWebhook = stack.createMonitor();
-      const viaMock = await stack.notificationService.sendTestNotification(noWebhook);
-      expect(viaMock[0]).toMatchObject({ provider: 'mock', delivered: true });
+      const noTarget = await stack.notificationService.sendTestNotification(noWebhook);
+      expect(noTarget[0]).toMatchObject({ provider: 'none', delivered: false });
+
+      // With the mock default explicitly configured, the same call is a real
+      // (logged) delivery — exactly what a real change would do.
+      const mockDefault = buildStack({ defaultNotificationProvider: 'mock' });
+      try {
+        const viaMock = await mockDefault.notificationService.sendTestNotification(
+          mockDefault.createMonitor(),
+        );
+        expect(viaMock[0]).toMatchObject({ provider: 'mock', delivered: true });
+      } finally {
+        cleanupStack(mockDefault);
+      }
     } finally {
       cleanupStack(stack);
     }

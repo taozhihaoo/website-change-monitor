@@ -6,7 +6,6 @@ import type { Logger } from '../utils/logger.js';
 import type { Clock } from '../utils/clock.js';
 import { newId } from '../utils/id.js';
 import { sleep } from '../utils/clock.js';
-import type { UrlGuardOptions } from '../utils/url-guard.js';
 import type { NotificationPayload, NotificationProvider } from './provider.js';
 
 export interface TestNotificationResult {
@@ -22,7 +21,6 @@ export interface NotificationServiceDeps {
   logger: Logger;
   maxAttempts: number;
   retryBaseDelayMs: number;
-  urlGuardOptions: UrlGuardOptions;
   /** Used when a monitor has neither webhook nor email configured: 'none' | 'mock'. */
   defaultProvider: 'none' | 'mock';
 }
@@ -58,6 +56,9 @@ interface DeliveryRoute {
  * produced the change event.
  */
 export class NotificationService {
+  /** Delivery attempts still writing to the DB — drained before shutdown. */
+  private readonly inFlight = new Set<Promise<void>>();
+
   constructor(private readonly deps: NotificationServiceDeps) {}
 
   /**
@@ -66,6 +67,16 @@ export class NotificationService {
    * the check pipeline normally fires it without awaiting.
    */
   async notifyChange(monitor: Monitor, event: ChangeEvent): Promise<void> {
+    const work = this.performNotifyChange(monitor, event);
+    this.inFlight.add(work);
+    try {
+      await work;
+    } finally {
+      this.inFlight.delete(work);
+    }
+  }
+
+  private async performNotifyChange(monitor: Monitor, event: ChangeEvent): Promise<void> {
     const routes = this.resolveRoutes(monitor);
     if (routes.length === 0) {
       return;
@@ -74,36 +85,38 @@ export class NotificationService {
   }
 
   /**
-   * Sends a test notification through every configured target (webhook and/or
-   * email; mock when neither is configured). Does not persist anything.
+   * Waits (with a hard cap) for fire-and-forget deliveries to finish before
+   * the database is closed. Without this, a change detected right before
+   * SIGTERM loses its delivery rows or leaves them stuck at 'pending'.
+   */
+  async waitForIdle(timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.inFlight.size > 0 && Date.now() < deadline) {
+      const snapshot = [...this.inFlight];
+      await Promise.race([
+        Promise.allSettled(snapshot),
+        sleep(Math.max(1, Math.min(200, deadline - Date.now()))),
+      ]);
+    }
+  }
+
+  /**
+   * Sends a test notification through exactly the targets a real change would
+   * use (webhook and/or email, or the configured default provider). This MUST
+   * mirror resolveRoutes — otherwise the button reports success while real
+   * changes send nothing. Does not persist anything.
    */
   async sendTestNotification(monitor: Monitor): Promise<TestNotificationResult[]> {
-    const routes: DeliveryRoute[] = [];
-    if (monitor.webhookUrl !== null) {
-      const provider = this.deps.providers.get('webhook');
-      if (provider) {
-        routes.push({ providerName: 'webhook', provider, target: monitor.webhookUrl });
-      }
-    }
-    if (monitor.notifyEmail !== null) {
-      const provider = this.deps.providers.get('email');
-      if (provider) {
-        routes.push({ providerName: 'email', provider, target: monitor.notifyEmail });
-      }
-    }
-    if (routes.length === 0) {
-      const mock = this.deps.providers.get('mock');
-      if (mock) {
-        routes.push({ providerName: 'mock', provider: mock, target: 'mock' });
-      }
-    }
+    const routes = this.resolveRoutes(monitor);
 
     if (routes.length === 0) {
       return [
         {
           provider: 'none',
           delivered: false,
-          error: 'No notification provider is available.',
+          error:
+            'No notification target is configured. Set a webhook URL or email, ' +
+            'or start the server with DEFAULT_NOTIFICATION_PROVIDER=mock.',
         },
       ];
     }

@@ -68,13 +68,13 @@ export class SnapshotRepository {
     });
   }
 
-  listByMonitor(monitorId: string, limit: number): Snapshot[] {
+  listByMonitor(monitorId: string, limit: number, offset = 0): Snapshot[] {
     return withDb('snapshot.listByMonitor', () => {
       const rows = this.db
         .prepare(
-          'SELECT * FROM snapshots WHERE monitor_id = ? ORDER BY checked_at DESC, rowid DESC LIMIT ?',
+          'SELECT * FROM snapshots WHERE monitor_id = ? ORDER BY checked_at DESC, rowid DESC LIMIT ? OFFSET ?',
         )
-        .all(monitorId, limit) as SnapshotRow[];
+        .all(monitorId, limit, offset) as SnapshotRow[];
       return rows.map(rowToSnapshot);
     });
   }

@@ -127,8 +127,14 @@ describe('migrations', () => {
     insertEvent.run('e1', now);
     // under v1 the same (monitor_id, current_hash) was rejected
     expect(() => insertEvent.run('e2', now)).toThrowError();
+    // seed a delivery row referencing e1: v2's DROP TABLE used to cascade
+    // delete the whole delivery history (see migrations.ts).
+    db.prepare(
+      `INSERT INTO notification_deliveries (id, change_event_id, monitor_id, provider, target, status, attempts, last_error, created_at, updated_at)
+       VALUES ('d1', 'e1', 'm1', 'webhook', 'https://hooks.example.com/h?token=secret', 'sent', 1, NULL, ?, ?)`,
+    ).run(now, now);
 
-    // apply everything that is still pending (v2)
+    // apply everything that is still pending (v2 + v3)
     migrate(db);
 
     // existing data survived the table rebuild
@@ -136,6 +142,16 @@ describe('migrations', () => {
       id: string;
     }>;
     expect(rows.map((row) => row.id)).toEqual(['e1']);
+    const deliveries = db
+      .prepare('SELECT * FROM notification_deliveries')
+      .all() as Array<{ id: string; target: string; status: string }>;
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      id: 'd1',
+      target: 'https://hooks.example.com/h?token=secret',
+      status: 'sent',
+    });
+    expect(db.pragma('foreign_key_check')).toHaveLength(0);
     // and the same content state can now be recorded again
     expect(() => insertEvent.run('e3', now)).not.toThrowError();
     // the query index was recreated
@@ -143,6 +159,15 @@ describe('migrations', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'change_events'")
       .all() as Array<{ name: string }>;
     expect(indexes.map((index) => index.name)).toContain('idx_change_events_monitor');
+  });
+
+  it('refuses to run against a database written by a newer app version', () => {
+    db.exec('CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+    db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+      9_999,
+      new Date().toISOString(),
+    );
+    expect(() => migrate(db)).toThrowError(/newer/);
   });
 
   it('cascade-deletes dependents when a monitor is removed', () => {

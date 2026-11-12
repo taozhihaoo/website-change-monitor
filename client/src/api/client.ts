@@ -91,24 +91,5 @@ export function formatValidationDetails(details: unknown): string[] {
   return [];
 }
 
-export function formatDateTime(iso: string | null): string {
-  if (iso === null) {
-    return '—';
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return date.toLocaleString();
-}
+// Date/interval formatting lives in i18n.tsx so it follows the UI language.
 
-export function formatInterval(seconds: number): string {
-  if (seconds < 3600) {
-    return `${Math.round(seconds / 60)} min`;
-  }
-  if (seconds < 86400) {
-    const hours = seconds / 3600;
-    return Number.isInteger(hours) ? `${hours} h` : `${hours.toFixed(1)} h`;
-  }
-  return `${seconds / 86400} day(s)`;
-}

@@ -116,15 +116,15 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
     deps.monitorService.get(id);
     const { limit, offset } = paginationQuerySchema.parse(request.query);
     const runs = deps.checkRunRepo.listByMonitor(id, limit, offset);
-    return { runs: runs.map(serializeCheckRun) };
+    return { runs: runs.map(serializeCheckRun), limit, offset };
   });
 
   app.get('/monitors/:id/snapshots', async (request) => {
     const { id } = idParamSchema.parse(request.params);
     deps.monitorService.get(id);
     const { limit, offset } = paginationQuerySchema.parse(request.query);
-    const snapshots = deps.snapshotRepo.listByMonitor(id, limit);
-    return { snapshots: snapshots.map(serializeSnapshot), offset };
+    const snapshots = deps.snapshotRepo.listByMonitor(id, limit, offset);
+    return { snapshots: snapshots.map(serializeSnapshot), limit, offset };
   });
 
   app.get('/monitors/:id/changes', async (request) => {
@@ -132,11 +132,15 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
     deps.monitorService.get(id);
     const { limit, offset } = paginationQuerySchema.parse(request.query);
     const events = deps.changeEventRepo.listByMonitor(id, limit, offset);
+    // One query for the whole page instead of one per change event.
+    const grouped = deps.deliveryRepo.listByChangeEvents(events.map((event) => event.id));
     return {
       changes: events.map((event) => ({
         ...serializeChangeEvent(event),
-        deliveries: deps.deliveryRepo.listByChangeEvent(event.id).map(serializeDelivery),
+        deliveries: (grouped.get(event.id) ?? []).map(serializeDelivery),
       })),
+      limit,
+      offset,
     };
   });
 
@@ -145,17 +149,18 @@ export async function monitorRoutes(app: FastifyInstance, deps: MonitorRoutesDep
     deps.monitorService.get(id);
     const { limit, offset } = paginationQuerySchema.parse(request.query);
     const deliveries = deps.deliveryRepo.listByMonitor(id, limit, offset);
-    return { notifications: deliveries.map(serializeDelivery) };
+    return { notifications: deliveries.map(serializeDelivery), limit, offset };
   });
 
   app.post('/monitors/:id/test-notification', async (request) => {
     const { id } = idParamSchema.parse(request.params);
     const monitor = deps.monitorService.get(id);
     const results = await deps.notificationService.sendTestNotification(monitor);
-    const attempted = results.filter((result) => result.provider !== 'none');
-    const allFailed = attempted.length > 0 && attempted.every((result) => !result.delivered);
+    // "No target configured" must not be reported as a successful test:
+    // with DEFAULT_NOTIFICATION_PROVIDER=none a real change sends nothing.
+    const allFailed = results.length === 0 || results.every((result) => !result.delivered);
     if (allFailed) {
-      const errors = attempted
+      const errors = results
         .map((result) => `${result.provider}: ${result.error ?? 'failed'}`)
         .join('; ');
       throw new AppError('NOTIFICATION_FAILED', errors || 'Test notification failed.');

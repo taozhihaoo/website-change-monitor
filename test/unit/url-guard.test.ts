@@ -90,6 +90,24 @@ describe('assertSafePublicUrl', () => {
     }
   });
 
+  it('blocks IANA reserved/documentation ranges and IPv4-compatible IPv6', () => {
+    const blocked = [
+      'http://192.0.0.1/',
+      'http://192.0.2.1/',
+      'http://198.18.0.1/',
+      'http://198.19.255.255/',
+      'http://198.51.100.1/',
+      'http://203.0.113.1/',
+      'http://[::7f00:1]/', // IPv4-compatible 127.0.0.1
+      'http://[::a00:1]/', // IPv4-compatible 10.0.0.1
+    ];
+    for (const url of blocked) {
+      expect(() => assertSafePublicUrl(url, STRICT), url).toThrowError();
+    }
+    expect(isSafePublicUrl('http://192.0.3.1/', STRICT)).toBe(true);
+    expect(isSafePublicUrl('http://198.20.0.1/', STRICT)).toBe(true);
+  });
+
   it('allows public IPv6 addresses', () => {
     expect(isSafePublicUrl('http://[2606:4700::1111]/', STRICT)).toBe(true);
     expect(isSafePublicUrl('http://[::ffff:8.8.8.8]/', STRICT)).toBe(true);
